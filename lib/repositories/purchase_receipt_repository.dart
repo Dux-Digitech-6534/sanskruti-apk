@@ -27,8 +27,21 @@ class PurchaseReceiptRepository {
   }) async {
     final filters = <List<String>>[];
     final trimmedSearch = search.trim();
+    final itemSearchTerms = trimmedSearch.isEmpty
+        ? const <String, List<String>>{}
+        : await _fetchChildSearchTerms(
+            childDoctype: 'Purchase Receipt Item',
+            search: trimmedSearch,
+          );
+    final orFilters = <List<Object>>[];
     if (trimmedSearch.isNotEmpty) {
-      filters.add(['name', 'like', '%$trimmedSearch%']);
+      orFilters.addAll([
+        ['name', 'like', '%$trimmedSearch%'],
+        ['supplier', 'like', '%$trimmedSearch%'],
+      ]);
+      if (itemSearchTerms.isNotEmpty) {
+        orFilters.add(['name', 'in', itemSearchTerms.keys.toList()]);
+      }
     }
 
     final response = await _apiClient.get(
@@ -36,6 +49,7 @@ class PurchaseReceiptRepository {
       queryParameters: {
         'fields': jsonEncode(['name', 'supplier', 'posting_date', 'status']),
         if (filters.isNotEmpty) 'filters': jsonEncode(filters),
+        if (orFilters.isNotEmpty) 'or_filters': jsonEncode(orFilters),
         'order_by': 'modified desc',
         'limit_start': limitStart,
         'limit_page_length': limitPageLength,
@@ -49,12 +63,58 @@ class PurchaseReceiptRepository {
     final data = response.data is Map ? response.data['data'] : null;
     if (data is! List) return const [];
 
-    return data
-        .whereType<Map>()
-        .map(
-          (item) => PurchaseReceipt.fromJson(Map<String, dynamic>.from(item)),
-        )
-        .toList();
+    return data.whereType<Map>().map((item) {
+      final row = Map<String, dynamic>.from(item);
+      row['_search_terms'] = itemSearchTerms[row['name']?.toString()] ?? [];
+      return PurchaseReceipt.fromJson(row);
+    }).toList();
+  }
+
+  Future<Map<String, List<String>>> _fetchChildSearchTerms({
+    required String childDoctype,
+    required String search,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '${ApiEndpoints.resource}/$childDoctype',
+        queryParameters: {
+          'fields': jsonEncode([
+            'parent',
+            'item_code',
+            'item_name',
+            'description',
+            'warehouse',
+            'project',
+          ]),
+          'or_filters': jsonEncode([
+            ['item_code', 'like', '%$search%'],
+            ['item_name', 'like', '%$search%'],
+            ['description', 'like', '%$search%'],
+            ['warehouse', 'like', '%$search%'],
+            ['project', 'like', '%$search%'],
+          ]),
+          'limit_page_length': 500,
+        },
+      );
+
+      final data = response.data is Map ? response.data['data'] : null;
+      if (data is! List) return const {};
+      final result = <String, List<String>>{};
+      for (final item in data.whereType<Map>()) {
+        final parent = item['parent']?.toString() ?? '';
+        if (parent.isEmpty) continue;
+        result.putIfAbsent(parent, () => <String>[]).addAll([
+          item['item_code']?.toString() ?? '',
+          item['item_name']?.toString() ?? '',
+          item['description']?.toString() ?? '',
+          item['warehouse']?.toString() ?? '',
+          item['project']?.toString() ?? '',
+        ]);
+      }
+      return result;
+    } on Object catch (_) {
+      return const {};
+    }
   }
 
   Future<List<LookupOption>> fetchSuppliers({String search = ''}) async {
@@ -443,12 +503,17 @@ class PurchaseReceiptRepository {
     required String supplier,
     required DateTime postingDate,
     required String purchaseOrder,
+    required String supplierDeliveryNote,
+    required PurchaseReceiptSupplierFields supplierFields,
     required List<PurchaseReceiptSubmitItem> items,
   }) async {
     final body = {
       'doctype': 'Purchase Receipt',
       'supplier': supplier,
       'posting_date': _apiDate(postingDate),
+      if (supplierDeliveryNote.trim().isNotEmpty)
+        'supplier_delivery_note': supplierDeliveryNote.trim(),
+      ...supplierFields.toPayload(),
       'items': items
           .map(
             (item) => {
@@ -581,6 +646,38 @@ class PurchaseReceiptRepository {
     throw Exception('Unable to upload file.');
   }
 
+  Future<void> updateAttachmentFields({
+    required String name,
+    String? materialReceiptUrl,
+    DateTime? materialReceiptCapturedAt,
+    String? invoiceReceiptUrl,
+    DateTime? invoiceReceiptCapturedAt,
+  }) async {
+    final data = <String, Object>{};
+    if (materialReceiptUrl != null) {
+      data['custom_add_material'] = materialReceiptUrl;
+    }
+    if (materialReceiptCapturedAt != null) {
+      data['custom_material_receipt_datetime'] = _apiDateTime(
+        materialReceiptCapturedAt,
+      );
+    }
+    if (invoiceReceiptUrl != null) {
+      data['custom_add_invoice'] = invoiceReceiptUrl;
+    }
+    if (invoiceReceiptCapturedAt != null) {
+      data['custom_material_invoice_datetime'] = _apiDateTime(
+        invoiceReceiptCapturedAt,
+      );
+    }
+    if (data.isEmpty) return;
+
+    await _apiClient.put(
+      '${ApiEndpoints.resource}/Purchase Receipt/${Uri.encodeComponent(name)}',
+      data: data,
+    );
+  }
+
   List<LookupOption> _lookupList(Object? responseData, {String? labelKey}) {
     final data = responseData is Map ? responseData['data'] : null;
     if (data is! List) return const [];
@@ -600,6 +697,15 @@ class PurchaseReceiptRepository {
     final month = value.month.toString().padLeft(2, '0');
     final day = value.day.toString().padLeft(2, '0');
     return '${value.year}-$month-$day';
+  }
+
+  String _apiDateTime(DateTime value) {
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+    final hour = value.hour.toString().padLeft(2, '0');
+    final minute = value.minute.toString().padLeft(2, '0');
+    final second = value.second.toString().padLeft(2, '0');
+    return '${value.year}-$month-$day $hour:$minute:$second';
   }
 }
 
@@ -691,6 +797,7 @@ class PurchaseOrderReceiptDetail {
   const PurchaseOrderReceiptDetail({
     required this.name,
     required this.supplier,
+    required this.supplierFields,
     required this.transactionDate,
     required this.status,
     required this.items,
@@ -698,6 +805,7 @@ class PurchaseOrderReceiptDetail {
 
   final String name;
   final String supplier;
+  final PurchaseReceiptSupplierFields supplierFields;
   final String? transactionDate;
   final String status;
   final List<PurchaseOrderReceiptItem> items;
@@ -707,6 +815,7 @@ class PurchaseOrderReceiptDetail {
     return PurchaseOrderReceiptDetail(
       name: json['name']?.toString() ?? '',
       supplier: json['supplier']?.toString() ?? '',
+      supplierFields: PurchaseReceiptSupplierFields.fromJson(json),
       transactionDate: json['transaction_date']?.toString(),
       status: json['status']?.toString() ?? 'Draft',
       items: items is List
@@ -721,6 +830,67 @@ class PurchaseOrderReceiptDetail {
                 .toList()
           : const [],
     );
+  }
+}
+
+class PurchaseReceiptSupplierFields {
+  const PurchaseReceiptSupplierFields({
+    required this.supplierName,
+    required this.supplierAddress,
+    required this.addressDisplay,
+    required this.contactPerson,
+    required this.contactDisplay,
+    required this.contactMobile,
+    required this.contactEmail,
+  });
+
+  final String supplierName;
+  final String supplierAddress;
+  final String addressDisplay;
+  final String contactPerson;
+  final String contactDisplay;
+  final String contactMobile;
+  final String contactEmail;
+
+  factory PurchaseReceiptSupplierFields.empty() {
+    return const PurchaseReceiptSupplierFields(
+      supplierName: '',
+      supplierAddress: '',
+      addressDisplay: '',
+      contactPerson: '',
+      contactDisplay: '',
+      contactMobile: '',
+      contactEmail: '',
+    );
+  }
+
+  factory PurchaseReceiptSupplierFields.fromJson(Map<String, dynamic> json) {
+    return PurchaseReceiptSupplierFields(
+      supplierName: json['supplier_name']?.toString() ?? '',
+      supplierAddress: json['supplier_address']?.toString() ?? '',
+      addressDisplay: json['address_display']?.toString() ?? '',
+      contactPerson: json['contact_person']?.toString() ?? '',
+      contactDisplay: json['contact_display']?.toString() ?? '',
+      contactMobile: json['contact_mobile']?.toString() ?? '',
+      contactEmail: json['contact_email']?.toString() ?? '',
+    );
+  }
+
+  Map<String, Object> toPayload() {
+    return {
+      if (supplierName.trim().isNotEmpty) 'supplier_name': supplierName.trim(),
+      if (supplierAddress.trim().isNotEmpty)
+        'supplier_address': supplierAddress.trim(),
+      if (addressDisplay.trim().isNotEmpty)
+        'address_display': addressDisplay.trim(),
+      if (contactPerson.trim().isNotEmpty)
+        'contact_person': contactPerson.trim(),
+      if (contactDisplay.trim().isNotEmpty)
+        'contact_display': contactDisplay.trim(),
+      if (contactMobile.trim().isNotEmpty)
+        'contact_mobile': contactMobile.trim(),
+      if (contactEmail.trim().isNotEmpty) 'contact_email': contactEmail.trim(),
+    };
   }
 }
 
@@ -794,6 +964,7 @@ class PurchaseReceiptDetail {
     required this.grandTotal,
     required this.items,
     required this.attachments,
+    required this.supplierDeliveryNote,
     this.postingDate,
   });
 
@@ -802,6 +973,7 @@ class PurchaseReceiptDetail {
   final String status;
   final int docstatus;
   final double grandTotal;
+  final String supplierDeliveryNote;
   final String? postingDate;
   final List<PurchaseReceiptDetailItem> items;
   final List<ReceiptAttachment> attachments;
@@ -823,6 +995,7 @@ class PurchaseReceiptDetail {
       status: json['status']?.toString() ?? _docStatusLabel(docstatus),
       docstatus: docstatus,
       grandTotal: _toDouble(json['grand_total'] ?? json['rounded_total']),
+      supplierDeliveryNote: json['supplier_delivery_note']?.toString() ?? '',
       postingDate: json['posting_date']?.toString(),
       items: items is List
           ? items

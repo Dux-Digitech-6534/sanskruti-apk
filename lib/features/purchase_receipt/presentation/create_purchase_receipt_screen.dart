@@ -11,8 +11,10 @@ import '../../../core/widgets/searchable_combo_box.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../repositories/dashboard_repository.dart';
 import '../../../models/purchase_request_form_models.dart';
 import '../../../repositories/purchase_receipt_repository.dart';
+import '../../purchase_request/presentation/purchase_request_controller.dart';
 import 'create_purchase_receipt_controller.dart';
 import 'purchase_receipt_controller.dart';
 
@@ -27,6 +29,7 @@ class CreatePurchaseReceiptScreen extends ConsumerStatefulWidget {
 class _CreatePurchaseReceiptScreenState
     extends ConsumerState<CreatePurchaseReceiptScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _supplierDeliveryNoteController = TextEditingController();
 
   @override
   void initState() {
@@ -40,6 +43,12 @@ class _CreatePurchaseReceiptScreenState
     });
   }
 
+  @override
+  void dispose() {
+    _supplierDeliveryNoteController.dispose();
+    super.dispose();
+  }
+
   Future<void> _openPurchaseOrderItemPicker() async {
     debugPrint('[CreatePurchaseReceipt] Add PO item clicked');
     FocusScope.of(context).unfocus();
@@ -49,7 +58,7 @@ class _CreatePurchaseReceiptScreenState
     );
     final currentState = ref.read(createPurchaseReceiptControllerProvider);
     if (currentState.isSaved || currentState.isSubmitted) {
-      _showMessage('This Purchase Receipt is already saved.');
+      _showMessage('This Material Received is already saved.');
       return;
     }
     if (currentState.suppliers.isEmpty && !currentState.isLoadingLookups) {
@@ -81,8 +90,11 @@ class _CreatePurchaseReceiptScreenState
   }
 
   Future<void> _pickAttachment(PurchaseReceiptAttachmentType type) async {
+    final source = await _selectAttachmentSource();
+    if (!mounted || source == null) return;
+
     final picked = await ImagePicker().pickImage(
-      source: ImageSource.camera,
+      source: source,
       imageQuality: 70,
     );
     if (!mounted || picked == null) return;
@@ -101,6 +113,29 @@ class _CreatePurchaseReceiptScreenState
     _showMessage('${picked.name} captured. It will upload after save.');
   }
 
+  Future<ImageSource?> _selectAttachmentSource() {
+    return showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: Text(context.l10n.t('camera')),
+              onTap: () => Navigator.of(context).pop(ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: Text(context.l10n.t('gallery')),
+              onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _createAndSubmit() async {
     debugPrint('[CreatePurchaseReceipt] Create and submit clicked');
     if (!_formKey.currentState!.validate()) return;
@@ -109,8 +144,10 @@ class _CreatePurchaseReceiptScreenState
           .read(createPurchaseReceiptControllerProvider.notifier)
           .createAndSubmit();
       if (!mounted) return;
-      _showMessage('Purchase Receipt Submitted: $receiptName');
+      _showMessage('Material Received Submitted: $receiptName');
       ref.invalidate(purchaseReceiptControllerProvider);
+      ref.invalidate(purchaseRequestControllerProvider);
+      ref.invalidate(dashboardDataProvider);
       context.go('/purchase-receipt');
     } on Object catch (error) {
       if (!mounted) return;
@@ -134,20 +171,6 @@ class _CreatePurchaseReceiptScreenState
     return Scaffold(
       resizeToAvoidBottomInset: true,
       appBar: CustomAppBar(title: context.l10n.t('create_purchase_receipt')),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'create_receipt_po_item_picker',
-        tooltip: context.l10n.t('select_purchase_order'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        onPressed:
-            state.isLoadingLookups ||
-                state.isSubmitting ||
-                state.isSaved ||
-                state.isSubmitted
-            ? null
-            : _openPurchaseOrderItemPicker,
-        child: const Icon(Icons.add),
-      ),
       bottomNavigationBar: state.hasReceiptItems
           ? SafeArea(
               minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -170,7 +193,12 @@ class _CreatePurchaseReceiptScreenState
           : Form(
               key: _formKey,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 108),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  state.hasReceiptItems ? 108 : 24,
+                ),
                 children: [
                   if (state.errorMessage != null) ...[
                     _ErrorBanner(message: state.errorMessage!),
@@ -193,12 +221,30 @@ class _CreatePurchaseReceiptScreenState
                               const StatusBadge(label: 'Submitted')
                             else if (state.isSaved)
                               const StatusBadge(label: 'Draft'),
-                            TextButton.icon(
-                              onPressed: state.isSaved || state.isSubmitted
+                            const SizedBox(width: 8),
+                            OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: AppColors.primary,
+                                side: const BorderSide(color: AppColors.border),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                minimumSize: const Size(0, 36),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed:
+                                  state.isLoadingLookups ||
+                                      state.isSubmitting ||
+                                      state.isSaved ||
+                                      state.isSubmitted
                                   ? null
                                   : _openPurchaseOrderItemPicker,
-                              icon: const Icon(Icons.add, size: 18),
-                              label: Text(context.l10n.t('add')),
+                              child: Text(context.l10n.t('add_po')),
                             ),
                           ],
                         ),
@@ -216,9 +262,17 @@ class _CreatePurchaseReceiptScreenState
                           hint: context.l10n.t('tap_plus_select_pending_po'),
                           icon: Icons.receipt_long_outlined,
                         ),
+                        const SizedBox(height: 12),
+                        AppTextField(
+                          controller: _supplierDeliveryNoteController,
+                          hintText: context.l10n.t('supplier_delivery_note'),
+                          prefixIcon: Icons.local_shipping_outlined,
+                          readOnly: state.isSaved || state.isSubmitted,
+                          onChanged: controller.setSupplierDeliveryNote,
+                        ),
                         const SizedBox(height: 18),
                         _AttachmentRow(
-                          title: context.l10n.t('add_material_receipt'),
+                          title: context.l10n.t('material_receipt_attachment'),
                           attachment: state.materialAttachmentDraft,
                           isUploading: state.isUploadingMaterial,
                           onAttach: state.isSaved || state.isSubmitted
@@ -229,7 +283,7 @@ class _CreatePurchaseReceiptScreenState
                         ),
                         const SizedBox(height: 10),
                         _AttachmentRow(
-                          title: context.l10n.t('add_invoice_receipt'),
+                          title: context.l10n.t('invoice_receipt_attachment'),
                           attachment: state.invoiceAttachmentDraft,
                           isUploading: state.isUploadingInvoice,
                           onAttach: state.isSaved || state.isSubmitted
@@ -241,10 +295,6 @@ class _CreatePurchaseReceiptScreenState
                       ],
                     ),
                   ),
-                  if (!state.hasReceiptItems && !state.isFetchingDetails) ...[
-                    const SizedBox(height: 18),
-                    _SelectionPromptCard(onTap: _openPurchaseOrderItemPicker),
-                  ],
                   if (state.isFetchingDetails) ...[
                     const SizedBox(height: 28),
                     const Center(child: CircularProgressIndicator()),
@@ -598,40 +648,6 @@ class _ReadOnlyField extends StatelessWidget {
   }
 }
 
-class _SelectionPromptCard extends StatelessWidget {
-  const _SelectionPromptCard({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.add_circle_outline, color: AppColors.primary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                context.l10n.t('tap_plus_select_supplier_po'),
-                style: const TextStyle(color: AppColors.mutedText),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _AttachmentRow extends StatelessWidget {
   const _AttachmentRow({
     required this.title,
@@ -866,8 +882,10 @@ class _ReceiptItemCard extends StatelessWidget {
               if (qty == null || qty <= 0) {
                 return context.l10n.message('Receive qty must be > 0');
               }
-              if (qty > item.pendingQty) {
-                return context.l10n.message('Cannot exceed pending qty');
+              if (qty > item.maxReceiveQty) {
+                return context.l10n.message(
+                  'Cannot exceed allowed tolerance qty ${_formatQty(item.maxReceiveQty)}',
+                );
               }
               return null;
             },

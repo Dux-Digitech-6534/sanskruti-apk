@@ -10,9 +10,13 @@ class StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (label.toLowerCase()) {
-      'approved' || 'received' => AppColors.success,
-      'rejected' => AppColors.danger,
+    final lower = label.toLowerCase();
+    final color = switch (lower) {
+      'approved' ||
+      'received' ||
+      'ordered' ||
+      'partially received' => AppColors.success,
+      'rejected' || 'cancelled' || 'canceled' => AppColors.danger,
       _ => AppColors.warning,
     };
 

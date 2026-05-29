@@ -16,18 +16,26 @@ class CreatePurchaseRequestState {
     this.warehouses = const [],
     this.filteredItems = const [],
     this.items = const [],
+    this.materialAttachmentDraft,
     this.selectedProject,
     this.selectedCategory,
+    this.scheduleDate,
+    this.priority = 'Medium',
+    this.remark = '',
     this.autoWarehouse = '',
     this.isLoading = false,
     this.isLoadingProject = false,
     this.isLoadingItems = false,
+    this.isUploadingAttachment = false,
     this.isSubmitting = false,
     this.errorMessage,
   });
 
   factory CreatePurchaseRequestState.initial() {
-    return const CreatePurchaseRequestState();
+    final today = DateTime.now();
+    return CreatePurchaseRequestState(
+      scheduleDate: DateTime(today.year, today.month, today.day),
+    );
   }
 
   final List<LookupOption> projects;
@@ -35,12 +43,17 @@ class CreatePurchaseRequestState {
   final List<LookupOption> warehouses;
   final List<ItemLookupOption> filteredItems;
   final List<CreatePurchaseRequestItemDraft> items;
+  final MaterialRequestAttachmentDraft? materialAttachmentDraft;
   final String? selectedProject;
   final String? selectedCategory;
+  final DateTime? scheduleDate;
+  final String priority;
+  final String remark;
   final String autoWarehouse;
   final bool isLoading;
   final bool isLoadingProject;
   final bool isLoadingItems;
+  final bool isUploadingAttachment;
   final bool isSubmitting;
   final String? errorMessage;
 
@@ -50,16 +63,22 @@ class CreatePurchaseRequestState {
     List<LookupOption>? warehouses,
     List<ItemLookupOption>? filteredItems,
     List<CreatePurchaseRequestItemDraft>? items,
+    MaterialRequestAttachmentDraft? materialAttachmentDraft,
     String? selectedProject,
     String? selectedCategory,
+    DateTime? scheduleDate,
+    String? priority,
+    String? remark,
     String? autoWarehouse,
     bool? isLoading,
     bool? isLoadingProject,
     bool? isLoadingItems,
+    bool? isUploadingAttachment,
     bool? isSubmitting,
     String? errorMessage,
     bool clearProject = false,
     bool clearCategory = false,
+    bool clearMaterialAttachment = false,
     bool clearError = false,
   }) {
     return CreatePurchaseRequestState(
@@ -68,20 +87,38 @@ class CreatePurchaseRequestState {
       warehouses: warehouses ?? this.warehouses,
       filteredItems: filteredItems ?? this.filteredItems,
       items: items ?? this.items,
+      materialAttachmentDraft: clearMaterialAttachment
+          ? null
+          : materialAttachmentDraft ?? this.materialAttachmentDraft,
       selectedProject: clearProject
           ? null
           : selectedProject ?? this.selectedProject,
       selectedCategory: clearCategory
           ? null
           : selectedCategory ?? this.selectedCategory,
+      scheduleDate: scheduleDate ?? this.scheduleDate,
+      priority: priority ?? this.priority,
+      remark: remark ?? this.remark,
       autoWarehouse: autoWarehouse ?? this.autoWarehouse,
       isLoading: isLoading ?? this.isLoading,
       isLoadingProject: isLoadingProject ?? this.isLoadingProject,
       isLoadingItems: isLoadingItems ?? this.isLoadingItems,
+      isUploadingAttachment:
+          isUploadingAttachment ?? this.isUploadingAttachment,
       isSubmitting: isSubmitting ?? this.isSubmitting,
       errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
     );
   }
+}
+
+class MaterialRequestAttachmentDraft {
+  const MaterialRequestAttachmentDraft({
+    required this.filePath,
+    required this.fileName,
+  });
+
+  final String filePath;
+  final String fileName;
 }
 
 class CreatePurchaseRequestItemDraft {
@@ -167,6 +204,18 @@ class CreatePurchaseRequestController
     state = state.copyWith(autoWarehouse: value ?? '', clearError: true);
   }
 
+  void setScheduleDate(DateTime value) {
+    state = state.copyWith(scheduleDate: value, clearError: true);
+  }
+
+  void setPriority(String? value) {
+    state = state.copyWith(priority: value ?? 'Medium', clearError: true);
+  }
+
+  void setRemark(String value) {
+    state = state.copyWith(remark: value, clearError: true);
+  }
+
   Future<void> setCategory(String? value) async {
     state = state.copyWith(
       selectedCategory: value,
@@ -202,7 +251,21 @@ class CreatePurchaseRequestController
     state = state.copyWith(items: items);
   }
 
-  Future<String> createAndSubmit() async {
+  void captureAttachment({required String filePath, required String fileName}) {
+    state = state.copyWith(
+      materialAttachmentDraft: MaterialRequestAttachmentDraft(
+        filePath: filePath,
+        fileName: fileName,
+      ),
+      clearError: true,
+    );
+  }
+
+  void clearAttachment() {
+    state = state.copyWith(clearMaterialAttachment: true, clearError: true);
+  }
+
+  Future<MaterialRequestDetail> createAndSave() async {
     final validationError = _validate();
     if (validationError != null) {
       state = state.copyWith(errorMessage: validationError);
@@ -215,6 +278,9 @@ class CreatePurchaseRequestController
         project: state.selectedProject!,
         warehouse: state.autoWarehouse,
         category: state.selectedCategory!,
+        scheduleDate: state.scheduleDate!,
+        priority: state.priority,
+        remark: state.remark,
         items: state.items
             .map(
               (item) => MaterialRequestItemDraft(
@@ -228,17 +294,36 @@ class CreatePurchaseRequestController
             )
             .toList(),
       );
-      await _repository.submitMaterialRequest(createdName);
+      await _uploadCapturedAttachment(createdName);
+      final savedDetail = await _repository.fetchMaterialRequestDetail(
+        createdName,
+      );
       state = CreatePurchaseRequestState.initial();
-      return createdName;
-    } on MaterialRequestSubmitException catch (error) {
-      final message = error.toString();
-      state = state.copyWith(isSubmitting: false, errorMessage: message);
-      throw message;
+      return savedDetail;
     } on Object catch (error) {
       final message = error is String ? error : _friendlyError(error);
       state = state.copyWith(isSubmitting: false, errorMessage: message);
       throw message;
+    }
+  }
+
+  Future<void> _uploadCapturedAttachment(String docName) async {
+    final attachment = state.materialAttachmentDraft;
+    if (attachment == null) return;
+
+    state = state.copyWith(isUploadingAttachment: true);
+    try {
+      final uploaded = await _repository.uploadMaterialAttachment(
+        filePath: attachment.filePath,
+        fileName: attachment.fileName,
+        docName: docName,
+      );
+      await _repository.updateMaterialAttachment(
+        name: docName,
+        fileUrl: uploaded.fileUrl,
+      );
+    } finally {
+      state = state.copyWith(isUploadingAttachment: false);
     }
   }
 
@@ -251,6 +336,12 @@ class CreatePurchaseRequestController
     }
     if (state.autoWarehouse.trim().isEmpty) {
       return 'Warehouse is required.';
+    }
+    if (state.scheduleDate == null) {
+      return 'Required date is required';
+    }
+    if (!const ['Low', 'Medium', 'High'].contains(state.priority)) {
+      return 'Priority is required.';
     }
     if (state.items.isEmpty) return 'At least one item is required.';
 

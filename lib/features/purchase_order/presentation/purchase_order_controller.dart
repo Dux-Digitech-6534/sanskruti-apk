@@ -74,6 +74,7 @@ class PurchaseOrderState {
       order.supplier,
       order.status,
       order.transactionDate ?? '',
+      ...order.searchTerms,
     ].any((value) => value.toLowerCase().contains(query));
   }
 

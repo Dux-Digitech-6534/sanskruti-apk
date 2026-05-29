@@ -31,7 +31,7 @@ class MaterialRequestController extends GetxController {
   );
   final projectController = TextEditingController();
   final requiredByController = TextEditingController(
-    text: Formatters.apiDate(DateTime.now().add(const Duration(days: 7))),
+    text: Formatters.apiDate(DateTime.now()),
   );
   final categoryController = TextEditingController();
   final priceListController = TextEditingController();
@@ -122,12 +122,12 @@ class MaterialRequestController extends GetxController {
       final created = await _repository.create(payload);
       final name = created['name']?.toString() ?? '';
       if (name.isEmpty) {
-        throw Exception('Material Request created but submit failed');
+        throw Exception('Material Request created but could not be reloaded');
       }
-      await _repository.update(name, {'docstatus': 1});
+      details.value = await _repository.getByName(name);
       _resetForm();
       Get.snackbar(
-        'Material Request submitted',
+        'Material Request saved',
         name,
         snackPosition: SnackPosition.BOTTOM,
       );
@@ -152,13 +152,13 @@ class MaterialRequestController extends GetxController {
     remarksController.clear();
     purposeController.text = 'Purchase';
     transactionDateController.text = Formatters.apiDate(DateTime.now());
-    requiredByController.text = Formatters.apiDate(
-      DateTime.now().add(const Duration(days: 7)),
-    );
+    requiredByController.text = Formatters.apiDate(DateTime.now());
     for (final item in items) {
       item.dispose();
     }
-    items.assignAll([MaterialRequestItem()]);
+    items.assignAll([
+      MaterialRequestItem(requiredBy: requiredByController.text),
+    ]);
   }
 
   @override

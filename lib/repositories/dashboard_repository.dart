@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/api/api_client.dart';
 import '../core/constants/api_endpoints.dart';
+import '../models/material_request_status.dart';
 import '../models/dashboard_data.dart';
 import '../models/purchase_receipt.dart';
 import '../models/purchase_request_summary.dart';
@@ -41,7 +42,10 @@ class DashboardRepository {
 
     return DashboardData(
       pendingRequestsCount: pendingMaterialRequests
-          .where(_isNotCompleted)
+          .where(
+            (request) =>
+                MaterialRequestStatus.isPendingLike(request.displayStatus),
+          )
           .length,
       pendingPurchaseOrdersCount: pendingPurchaseOrders
           .where(_isNotCompleted)
@@ -154,11 +158,16 @@ class DashboardRepository {
 
     return const [
       'name',
+      'docstatus',
       'status',
       'schedule_date',
       'transaction_date',
       'set_warehouse',
       'material_request_type',
+      'workflow_state',
+      'custom_workflow_status',
+      'per_ordered',
+      'per_received',
     ];
   }
 }

@@ -125,7 +125,7 @@ class _AppDrawer extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Sanskruti Group',
+              'Dux Purchase Master',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,

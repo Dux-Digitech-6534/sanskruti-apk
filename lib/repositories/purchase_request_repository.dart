@@ -1,10 +1,12 @@
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/api/api_client.dart';
 import '../core/constants/api_endpoints.dart';
+import '../models/material_request_status.dart';
 import '../models/purchase_request.dart';
 import '../models/purchase_request_form_models.dart';
 
@@ -23,11 +25,30 @@ class PurchaseRequestRepository {
     required int limitStart,
     required int limitPageLength,
     String search = '',
+    String? project,
   }) async {
     final filters = <List<String>>[];
     final trimmedSearch = search.trim();
+    final trimmedProject = project?.trim() ?? '';
+    if (trimmedProject.isNotEmpty) {
+      filters.add(['custom_select_project_', '=', trimmedProject]);
+    }
+    final itemSearchTerms = trimmedSearch.isEmpty
+        ? const <String, List<String>>{}
+        : await _fetchChildSearchTerms(
+            childDoctype: 'Material Request Item',
+            search: trimmedSearch,
+          );
+    final orFilters = <List<Object>>[];
     if (trimmedSearch.isNotEmpty) {
-      filters.add(['name', 'like', '%$trimmedSearch%']);
+      orFilters.addAll([
+        ['name', 'like', '%$trimmedSearch%'],
+        ['custom_select_project_', 'like', '%$trimmedSearch%'],
+        ['set_warehouse', 'like', '%$trimmedSearch%'],
+      ]);
+      if (itemSearchTerms.isNotEmpty) {
+        orFilters.add(['name', 'in', itemSearchTerms.keys.toList()]);
+      }
     }
 
     final response = await _apiClient.get(
@@ -35,13 +56,21 @@ class PurchaseRequestRepository {
       queryParameters: {
         'fields': jsonEncode([
           'name',
+          'docstatus',
           'status',
           'schedule_date',
           'transaction_date',
           'set_warehouse',
+          'custom_select_project_',
           'material_request_type',
+          'custom_priority',
+          'workflow_state',
+          'custom_workflow_status',
+          'per_ordered',
+          'per_received',
         ]),
         if (filters.isNotEmpty) 'filters': jsonEncode(filters),
+        if (orFilters.isNotEmpty) 'or_filters': jsonEncode(orFilters),
         'order_by': 'modified desc',
         'limit_start': limitStart,
         'limit_page_length': limitPageLength,
@@ -55,12 +84,58 @@ class PurchaseRequestRepository {
     final data = response.data is Map ? response.data['data'] : null;
     if (data is! List) return const [];
 
-    return data
-        .whereType<Map>()
-        .map(
-          (item) => PurchaseRequest.fromJson(Map<String, dynamic>.from(item)),
-        )
-        .toList();
+    return data.whereType<Map>().map((item) {
+      final row = Map<String, dynamic>.from(item);
+      row['_search_terms'] = itemSearchTerms[row['name']?.toString()] ?? [];
+      return PurchaseRequest.fromJson(row);
+    }).toList();
+  }
+
+  Future<Map<String, List<String>>> _fetchChildSearchTerms({
+    required String childDoctype,
+    required String search,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '${ApiEndpoints.resource}/$childDoctype',
+        queryParameters: {
+          'fields': jsonEncode([
+            'parent',
+            'item_code',
+            'item_name',
+            'description',
+            'warehouse',
+            'project',
+          ]),
+          'or_filters': jsonEncode([
+            ['item_code', 'like', '%$search%'],
+            ['item_name', 'like', '%$search%'],
+            ['description', 'like', '%$search%'],
+            ['warehouse', 'like', '%$search%'],
+            ['project', 'like', '%$search%'],
+          ]),
+          'limit_page_length': 500,
+        },
+      );
+
+      final data = response.data is Map ? response.data['data'] : null;
+      if (data is! List) return const {};
+      final result = <String, List<String>>{};
+      for (final item in data.whereType<Map>()) {
+        final parent = item['parent']?.toString() ?? '';
+        if (parent.isEmpty) continue;
+        result.putIfAbsent(parent, () => <String>[]).addAll([
+          item['item_code']?.toString() ?? '',
+          item['item_name']?.toString() ?? '',
+          item['description']?.toString() ?? '',
+          item['warehouse']?.toString() ?? '',
+          item['project']?.toString() ?? '',
+        ]);
+      }
+      return result;
+    } on Object catch (_) {
+      return const {};
+    }
   }
 
   Future<MaterialRequestDetail> fetchMaterialRequestDetail(String name) async {
@@ -223,6 +298,9 @@ class PurchaseRequestRepository {
     required String project,
     required String warehouse,
     required String category,
+    required DateTime scheduleDate,
+    required String priority,
+    required String remark,
     required List<MaterialRequestItemDraft> items,
   }) async {
     final body = {
@@ -232,7 +310,10 @@ class PurchaseRequestRepository {
       'custom_select_project_': project,
       'set_warehouse': warehouse,
       'material_category': category,
-      'schedule_date': _apiDate(items.first.scheduleDate),
+      'custom_category': category,
+      'custom_priority': priority,
+      if (remark.trim().isNotEmpty) 'custom_remark': remark.trim(),
+      'schedule_date': _apiDate(scheduleDate),
       'items': items
           .map(
             (item) => {
@@ -266,23 +347,149 @@ class PurchaseRequestRepository {
 
     final data = response.data is Map ? response.data['data'] : null;
     if (data is Map && data['name'] != null) return data['name'].toString();
-    return 'Material Request';
+    throw Exception('Material Request created but could not be reloaded');
   }
 
-  Future<void> submitMaterialRequest(String name) async {
-    try {
-      await _apiClient.put(
-        '${ApiEndpoints.resource}/Material Request/${Uri.encodeComponent(name)}',
-        data: {'docstatus': 1},
-      );
-    } on Object catch (error) {
-      throw MaterialRequestSubmitException(error);
+  Future<UploadedMaterialAttachment> uploadMaterialAttachment({
+    required String filePath,
+    required String fileName,
+    required String docName,
+  }) async {
+    if (docName.trim().isEmpty) {
+      throw Exception('Material Request docname is required for attachment.');
     }
 
-    final detail = await fetchMaterialRequestDetail(name);
-    if (detail.docstatus != 1) {
-      throw MaterialRequestSubmitException('docstatus is ${detail.docstatus}');
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(filePath, filename: fileName),
+      'doctype': 'Material Request',
+      'docname': docName,
+      'is_private': '1',
+    });
+
+    final response = await _apiClient.post(
+      '/api/method/upload_file',
+      data: formData,
+    );
+
+    final data = _uploadedFileData(response.data);
+    final fileUrl = data['file_url']?.toString() ?? '';
+    final uploadedName = data['file_name']?.toString() ?? fileName;
+    if (fileUrl.isEmpty) throw Exception('Unable to upload file.');
+
+    return UploadedMaterialAttachment(fileName: uploadedName, fileUrl: fileUrl);
+  }
+
+  Future<void> updateMaterialAttachment({
+    required String name,
+    required String fileUrl,
+  }) async {
+    await _apiClient.put(
+      '${ApiEndpoints.resource}/Material Request/${Uri.encodeComponent(name)}',
+      data: {'custom_add_receipt': fileUrl},
+    );
+  }
+
+  Future<List<WorkflowAction>> fetchAllowedWorkflowActions(
+    MaterialRequestDetail detail,
+  ) async {
+    final response = await _apiClient.post(
+      '/api/method/frappe.model.workflow.get_transitions',
+      data: {'doc': jsonEncode(detail.rawData)},
+    );
+    final message = _methodMessage(response.data);
+    if (message is! List) return const [];
+    return _uniqueWorkflowActions(
+      message
+          .whereType<Map>()
+          .map(
+            (item) => WorkflowAction.fromJson(Map<String, dynamic>.from(item)),
+          )
+          .where((action) => action.action.trim().isNotEmpty)
+          .toList(),
+    );
+  }
+
+  Future<void> applyWorkflowAction({
+    required MaterialRequestDetail detail,
+    required String action,
+    String? rejectionRemark,
+  }) async {
+    final remark = rejectionRemark?.trim() ?? '';
+    var workflowDoc = Map<String, dynamic>.from(detail.rawData);
+    if (_isRejectAction(action) && remark.isNotEmpty) {
+      final fieldname = await _saveRejectionRemark(detail.name, remark);
+      workflowDoc[fieldname] = remark;
     }
+
+    await _apiClient.post(
+      '/api/method/frappe.model.workflow.apply_workflow',
+      data: {'doc': jsonEncode(workflowDoc), 'action': action},
+    );
+  }
+
+  Future<String> _saveRejectionRemark(String name, String remark) async {
+    final candidates = await _rejectionRemarkFieldCandidates();
+    Object? lastError;
+    for (final fieldname in candidates) {
+      try {
+        await _apiClient.put(
+          '${ApiEndpoints.resource}/Material Request/${Uri.encodeComponent(name)}',
+          data: {fieldname: remark},
+        );
+        return fieldname;
+      } on Object catch (error) {
+        lastError = error;
+      }
+    }
+    throw Exception(
+      'Unable to save rejection remark. ${lastError ?? 'Field not found.'}',
+    );
+  }
+
+  Future<List<String>> _rejectionRemarkFieldCandidates() async {
+    final discovered = <String>[];
+    try {
+      final response = await _apiClient.get(
+        '${ApiEndpoints.resource}/Custom Field',
+        queryParameters: {
+          'fields': jsonEncode(['fieldname', 'label']),
+          'filters': jsonEncode([
+            ['dt', '=', 'Material Request'],
+          ]),
+          'limit_page_length': 200,
+        },
+      );
+      final data = response.data is Map ? response.data['data'] : null;
+      if (data is List) {
+        for (final row in data.whereType<Map>()) {
+          final label = row['label']?.toString().trim().toLowerCase() ?? '';
+          final fieldname = row['fieldname']?.toString().trim() ?? '';
+          if (fieldname.isEmpty) continue;
+          final isRejectionField =
+              label.contains('rejection') &&
+              (label.contains('remark') || label.contains('reason'));
+          if (isRejectionField) discovered.add(fieldname);
+        }
+      }
+    } on Object {
+      // Metadata access can be restricted; fall back to the common Frappe fieldname.
+    }
+
+    final candidates = [
+      ...discovered,
+      'custom_rejection_remark',
+      'custom_rejection_reason',
+      'rejection_remark',
+    ];
+    final unique = <String>{};
+    return [
+      for (final fieldname in candidates)
+        if (unique.add(fieldname)) fieldname,
+    ];
+  }
+
+  bool _isRejectAction(String action) {
+    return action.trim().toLowerCase().contains('reject');
   }
 
   List<LookupOption> _lookupList(Object? responseData, {String? labelKey}) {
@@ -309,6 +516,31 @@ class PurchaseRequestRepository {
     final month = value.month.toString().padLeft(2, '0');
     final day = value.day.toString().padLeft(2, '0');
     return '${value.year}-$month-$day';
+  }
+
+  Map<String, dynamic> _uploadedFileData(Object? responseData) {
+    final root = responseData is Map ? responseData : const {};
+    final message = root['message'];
+    final data = message is Map ? message : root['data'];
+    if (data is Map) return Map<String, dynamic>.from(data);
+    return const {};
+  }
+
+  Object? _methodMessage(Object? responseData) {
+    final root = responseData is Map ? responseData : const {};
+    return root['message'];
+  }
+
+  List<WorkflowAction> _uniqueWorkflowActions(List<WorkflowAction> actions) {
+    final seen = <String>{};
+    final unique = <WorkflowAction>[];
+    for (final action in actions) {
+      final name = action.action.trim();
+      final key = name.toLowerCase();
+      if (key.isEmpty || !seen.add(key)) continue;
+      unique.add(action);
+    }
+    return unique;
   }
 }
 
@@ -357,21 +589,49 @@ class MaterialRequestDetail {
     required this.name,
     required this.status,
     required this.docstatus,
+    required this.scheduleDate,
     required this.project,
     required this.warehouse,
     required this.category,
+    required this.priority,
+    required this.workflowState,
+    required this.customWorkflowStatus,
+    required this.perOrdered,
+    required this.perReceived,
+    required this.remark,
+    required this.materialAttachmentUrl,
     required this.items,
+    required this.rawData,
   });
 
   final String name;
   final String status;
   final int docstatus;
+  final String scheduleDate;
   final String project;
   final String warehouse;
   final String category;
+  final String priority;
+  final String workflowState;
+  final String customWorkflowStatus;
+  final double? perOrdered;
+  final double? perReceived;
+  final String remark;
+  final String materialAttachmentUrl;
   final List<MaterialRequestDetailItem> items;
+  final Map<String, dynamic> rawData;
 
   bool get isDraft => docstatus == 0;
+  String get displayWorkflowState {
+    return MaterialRequestStatus.fromErpFields(
+      status: status,
+      docstatus: docstatus,
+      workflowState: workflowState,
+      customWorkflowStatus: customWorkflowStatus,
+      perOrdered: perOrdered,
+      perReceived: perReceived,
+    );
+  }
 
   factory MaterialRequestDetail.fromJson(Map<String, dynamic> json) {
     final fallbackStatus = _docStatusLabel(_toInt(json['docstatus']));
@@ -380,12 +640,30 @@ class MaterialRequestDetail {
       name: json['name']?.toString() ?? '',
       status: json['status']?.toString() ?? fallbackStatus,
       docstatus: _toInt(json['docstatus']),
+      scheduleDate:
+          json['schedule_date']?.toString() ??
+          json['transaction_date']?.toString() ??
+          '',
       project: json['custom_select_project_']?.toString() ?? '-',
       warehouse: json['set_warehouse']?.toString() ?? '-',
       category:
-          json['material_category']?.toString() ??
           json['custom_category']?.toString() ??
+          json['material_category']?.toString() ??
           '-',
+      priority: json['custom_priority']?.toString() ?? 'Medium',
+      workflowState: json['workflow_state']?.toString() ?? '',
+      customWorkflowStatus: json['custom_workflow_status']?.toString() ?? '',
+      perOrdered: _nullableDouble(
+        json['per_ordered'] ?? json['percent_ordered'],
+      ),
+      perReceived: _nullableDouble(
+        json['per_received'] ?? json['percent_received'],
+      ),
+      remark: json['custom_remark']?.toString() ?? '',
+      materialAttachmentUrl:
+          json['custom_add_receipt']?.toString() ??
+          json['custom_material_attachment']?.toString() ??
+          '',
       items: items is List
           ? items
                 .whereType<Map>()
@@ -397,6 +675,7 @@ class MaterialRequestDetail {
                 .where((item) => item.itemCode.isNotEmpty)
                 .toList()
           : const [],
+      rawData: json,
     );
   }
 
@@ -404,6 +683,12 @@ class MaterialRequestDetail {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static double? _nullableDouble(Object? value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
   }
 
   static String _docStatusLabel(int docstatus) {
@@ -416,17 +701,34 @@ class MaterialRequestDetail {
   }
 }
 
-class MaterialRequestSubmitException implements Exception {
-  const MaterialRequestSubmitException(this.cause);
+class WorkflowAction {
+  const WorkflowAction({
+    required this.action,
+    required this.nextState,
+    required this.allowed,
+  });
 
-  final Object cause;
+  final String action;
+  final String nextState;
+  final String allowed;
 
-  @override
-  String toString() {
-    final detail = cause.toString().replaceFirst('Exception: ', '');
-    if (detail.isEmpty) return 'Material Request created but submit failed';
-    return 'Material Request created but submit failed: $detail';
+  factory WorkflowAction.fromJson(Map<String, dynamic> json) {
+    return WorkflowAction(
+      action: json['action']?.toString() ?? '',
+      nextState: json['next_state']?.toString() ?? '',
+      allowed: json['allowed']?.toString() ?? '',
+    );
   }
+}
+
+class UploadedMaterialAttachment {
+  const UploadedMaterialAttachment({
+    required this.fileName,
+    required this.fileUrl,
+  });
+
+  final String fileName;
+  final String fileUrl;
 }
 
 class MaterialRequestDetailItem {

@@ -9,7 +9,7 @@ class PurchaseReceiptDetailView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const ProcurementDocumentDetailView<PurchaseReceiptController>(
-      title: 'Purchase Receipt Details',
+      title: 'Material Received Details',
       icon: Icons.inventory_2_outlined,
     );
   }

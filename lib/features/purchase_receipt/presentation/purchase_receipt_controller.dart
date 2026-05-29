@@ -10,9 +10,8 @@ final purchaseReceiptControllerProvider =
 
 enum PurchaseReceiptStatusFilter {
   all('All'),
-  draft('Draft'),
-  submitted('Submitted'),
-  cancelled('Cancelled');
+  completed('Completed'),
+  toBill('To Bill');
 
   const PurchaseReceiptStatusFilter(this.label);
 
@@ -83,6 +82,7 @@ class PurchaseReceiptListState {
       receipt.supplier,
       receipt.status,
       receipt.postingDate ?? '',
+      ...receipt.searchTerms,
     ].any((value) => value.toLowerCase().contains(query));
   }
 
@@ -90,9 +90,8 @@ class PurchaseReceiptListState {
     final status = receipt.status.trim().toLowerCase();
     return switch (statusFilter) {
       PurchaseReceiptStatusFilter.all => true,
-      PurchaseReceiptStatusFilter.draft => status.contains('draft'),
-      PurchaseReceiptStatusFilter.submitted => status.contains('submit'),
-      PurchaseReceiptStatusFilter.cancelled => status.contains('cancel'),
+      PurchaseReceiptStatusFilter.completed => status.contains('completed'),
+      PurchaseReceiptStatusFilter.toBill => status.contains('to bill'),
     };
   }
 

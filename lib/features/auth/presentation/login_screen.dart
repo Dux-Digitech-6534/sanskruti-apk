@@ -115,7 +115,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       AppTextField(
                         controller: _userController,
                         focusNode: _userFocusNode,
-                        hintText: l10n.t('email_mobile_number'),
+                        hintText: l10n.t('user_id'),
                         prefixIcon: Icons.person_outline,
                         keyboardType: TextInputType.emailAddress,
                         textInputAction: TextInputAction.next,
@@ -127,7 +127,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ],
                         validator: (value) =>
                             value == null || value.trim().isEmpty
-                            ? l10n.message('Email or mobile number is required')
+                            ? l10n.message('User ID is required')
                             : null,
                       ),
                       const SizedBox(height: 12),
@@ -169,19 +169,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             l10n.t('remember_me'),
                             style: const TextStyle(fontSize: 12),
                           ),
-                          const Spacer(),
-                          TextButton(
-                            style: TextButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              textStyle: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            onPressed: () {},
-                            child: Text(l10n.t('forgot_password')),
-                          ),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -189,36 +176,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         label: l10n.t('login'),
                         isLoading: state.isLoading,
                         onPressed: _submit,
-                      ),
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          const Expanded(child: Divider()),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            child: Text(
-                              l10n.t('or'),
-                              style: const TextStyle(
-                                color: AppColors.mutedText,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                          const Expanded(child: Divider()),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(46),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          side: const BorderSide(color: AppColors.border),
-                        ),
-                        onPressed: () {},
-                        icon: const Icon(Icons.phone_iphone, size: 18),
-                        label: Text(l10n.t('login_with_otp')),
                       ),
                       const SizedBox(height: 20),
                       const _LoginFooter(),
@@ -240,31 +197,26 @@ class _LoginFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 30, 20, 28),
-      decoration: const BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.vertical(top: Radius.elliptical(220, 46)),
-      ),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
             AppLocalizations.of(context).t('powered_by'),
-            style: const TextStyle(color: Colors.white70, fontSize: 11),
+            style: const TextStyle(color: AppColors.mutedText, fontSize: 11),
           ),
           const SizedBox(height: 4),
-          const Text(
-            AppConstants.poweredBy,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
+          const SizedBox(
+            width: 190,
+            child: Image(
+              image: AssetImage(AppConstants.duxLogoAsset),
+              fit: BoxFit.contain,
             ),
           ),
           const SizedBox(height: 6),
           Text(
             AppLocalizations.of(context).t('version'),
-            style: const TextStyle(color: Colors.white70, fontSize: 11),
+            style: const TextStyle(color: AppColors.mutedText, fontSize: 11),
           ),
         ],
       ),

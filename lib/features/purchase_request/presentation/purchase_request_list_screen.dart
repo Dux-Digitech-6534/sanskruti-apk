@@ -10,11 +10,15 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/custom_app_bar.dart';
 import '../../../core/widgets/dashboard_card.dart';
 import '../../../core/widgets/list_filter_button.dart';
+import '../../../core/widgets/searchable_combo_box.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../models/purchase_request_form_models.dart';
 import '../../../models/purchase_request.dart';
 import 'purchase_request_controller.dart';
+
+const _allProjectsValue = '__all_projects__';
 
 class PurchaseRequestListScreen extends ConsumerStatefulWidget {
   const PurchaseRequestListScreen({this.initialPendingOnly = false, super.key});
@@ -39,6 +43,7 @@ class _PurchaseRequestListScreenState
     _scrollController.addListener(_onScroll);
     Future.microtask(() async {
       final controller = ref.read(purchaseRequestControllerProvider.notifier);
+      await controller.loadProjectOptions();
       if (widget.initialPendingOnly && !_appliedInitialFilter) {
         _appliedInitialFilter = true;
         controller.setStatusFilter(PurchaseRequestStatusFilter.pending);
@@ -74,6 +79,13 @@ class _PurchaseRequestListScreenState
     final state = ref.watch(purchaseRequestControllerProvider);
     final controller = ref.read(purchaseRequestControllerProvider.notifier);
     final visibleItems = state.visibleItems;
+    final projectOptions = [
+      LookupOption(
+        id: _allProjectsValue,
+        label: context.l10n.t('all_projects'),
+      ),
+      ...state.projects,
+    ];
 
     return Scaffold(
       drawer: const AppDrawer(),
@@ -127,6 +139,19 @@ class _PurchaseRequestListScreenState
               textInputAction: TextInputAction.search,
               onChanged: _onSearchChanged,
               onFieldSubmitted: controller.setSearch,
+            ),
+            const SizedBox(height: 12),
+            SearchableComboBox<LookupOption>(
+              label: context.l10n.t('project'),
+              value: state.selectedProject ?? _allProjectsValue,
+              items: projectOptions,
+              itemValue: (project) => project.id,
+              itemLabel: (project) => project.label,
+              prefixIcon: Icons.account_tree_outlined,
+              enabled: !state.isLoadingProjects,
+              onChanged: (value) => controller.setProjectFilter(
+                value == _allProjectsValue ? null : value,
+              ),
             ),
             const SizedBox(height: 12),
             Align(
@@ -190,12 +215,19 @@ class _StatusTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const filters = [
+      PurchaseRequestStatusFilter.all,
+      PurchaseRequestStatusFilter.pending,
+      PurchaseRequestStatusFilter.ordered,
+      PurchaseRequestStatusFilter.received,
+    ];
+
     return SizedBox(
       height: 38,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemBuilder: (context, index) {
-          final filter = PurchaseRequestStatusFilter.values[index];
+          final filter = filters[index];
           final isSelected = filter == selected;
           return ChoiceChip(
             label: Text(context.l10n.status(filter.label)),
@@ -213,7 +245,7 @@ class _StatusTabs extends StatelessWidget {
           );
         },
         separatorBuilder: (context, index) => const SizedBox(width: 8),
-        itemCount: PurchaseRequestStatusFilter.values.length,
+        itemCount: filters.length,
       ),
     );
   }
@@ -269,11 +301,18 @@ class _PurchaseRequestCard extends StatelessWidget {
                     '${context.l10n.t('required_date')}: ${Formatters.dateString(request.requiredDate)}',
                     style: const TextStyle(color: AppColors.mutedText),
                   ),
+                  if (request.priority?.trim().isNotEmpty == true) ...[
+                    const SizedBox(height: 5),
+                    Text(
+                      '${context.l10n.t('priority')}: ${request.priority}',
+                      style: const TextStyle(color: AppColors.mutedText),
+                    ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(width: 10),
-            StatusBadge(label: request.status),
+            StatusBadge(label: request.displayStatus),
           ],
         ),
       ),

@@ -142,7 +142,7 @@ class MaterialRequestCreateView extends GetView<MaterialRequestController> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.save_outlined),
-                label: const Text('Submit Material Request'),
+                label: const Text('Save Material Request'),
               ),
             ),
           ],

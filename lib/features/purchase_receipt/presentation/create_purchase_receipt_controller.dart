@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../models/purchase_request_form_models.dart';
 import '../../../repositories/purchase_receipt_repository.dart';
+import '../../../repositories/purchase_receipt_tolerance_settings_repository.dart';
 
 final createPurchaseReceiptControllerProvider =
     NotifierProvider<
@@ -19,6 +20,16 @@ class CreatePurchaseReceiptState {
     this.selectedSupplier,
     this.selectedPoItem,
     this.selectedPurchaseOrder,
+    this.supplierFields = const PurchaseReceiptSupplierFields(
+      supplierName: '',
+      supplierAddress: '',
+      addressDisplay: '',
+      contactPerson: '',
+      contactDisplay: '',
+      contactMobile: '',
+      contactEmail: '',
+    ),
+    this.supplierDeliveryNote = '',
     this.materialAttachmentDraft,
     this.invoiceAttachmentDraft,
     this.savedName,
@@ -39,6 +50,8 @@ class CreatePurchaseReceiptState {
   final String? selectedSupplier;
   final PurchaseOrderItemSelection? selectedPoItem;
   final PendingPurchaseOrder? selectedPurchaseOrder;
+  final PurchaseReceiptSupplierFields supplierFields;
+  final String supplierDeliveryNote;
   final ReceiptAttachmentDraft? materialAttachmentDraft;
   final ReceiptAttachmentDraft? invoiceAttachmentDraft;
   final String? savedName;
@@ -62,6 +75,8 @@ class CreatePurchaseReceiptState {
     String? selectedSupplier,
     PurchaseOrderItemSelection? selectedPoItem,
     PendingPurchaseOrder? selectedPurchaseOrder,
+    PurchaseReceiptSupplierFields? supplierFields,
+    String? supplierDeliveryNote,
     ReceiptAttachmentDraft? materialAttachmentDraft,
     ReceiptAttachmentDraft? invoiceAttachmentDraft,
     String? savedName,
@@ -94,6 +109,10 @@ class CreatePurchaseReceiptState {
       selectedPurchaseOrder: clearPurchaseOrder
           ? null
           : selectedPurchaseOrder ?? this.selectedPurchaseOrder,
+      supplierFields: clearPurchaseOrder
+          ? PurchaseReceiptSupplierFields.empty()
+          : supplierFields ?? this.supplierFields,
+      supplierDeliveryNote: supplierDeliveryNote ?? this.supplierDeliveryNote,
       materialAttachmentDraft: clearMaterialAttachment
           ? null
           : materialAttachmentDraft ?? this.materialAttachmentDraft,
@@ -118,10 +137,12 @@ class ReceiptAttachmentDraft {
   const ReceiptAttachmentDraft({
     required this.filePath,
     required this.fileName,
+    required this.capturedAt,
   });
 
   final String filePath;
   final String fileName;
+  final DateTime capturedAt;
 }
 
 class ReceiptDraftItem {
@@ -136,6 +157,7 @@ class ReceiptDraftItem {
     required this.warehouse,
     required this.purchaseOrderItem,
     required this.rate,
+    required this.tolerancePercentage,
   });
 
   final String itemCode;
@@ -148,6 +170,16 @@ class ReceiptDraftItem {
   final String warehouse;
   final String purchaseOrderItem;
   final double rate;
+  final double tolerancePercentage;
+
+  double get maxAllowedReceivedQty {
+    return orderedQty + (orderedQty * tolerancePercentage / 100);
+  }
+
+  double get maxReceiveQty {
+    final allowed = maxAllowedReceivedQty - receivedQty;
+    return allowed > 0 ? allowed : 0;
+  }
 
   ReceiptDraftItem copyWith({double? receiveQty}) {
     return ReceiptDraftItem(
@@ -161,10 +193,14 @@ class ReceiptDraftItem {
       warehouse: warehouse,
       purchaseOrderItem: purchaseOrderItem,
       rate: rate,
+      tolerancePercentage: tolerancePercentage,
     );
   }
 
-  factory ReceiptDraftItem.fromPoItem(PurchaseOrderReceiptItem item) {
+  factory ReceiptDraftItem.fromPoItem(
+    PurchaseOrderReceiptItem item,
+    PurchaseReceiptToleranceRule toleranceRule,
+  ) {
     return ReceiptDraftItem(
       itemCode: item.itemCode,
       itemName: item.itemName,
@@ -176,6 +212,7 @@ class ReceiptDraftItem {
       warehouse: item.warehouse,
       purchaseOrderItem: item.rowName,
       rate: item.rate,
+      tolerancePercentage: toleranceRule.percentageFor(item.itemCode),
     );
   }
 }
@@ -216,6 +253,10 @@ class CreatePurchaseReceiptController
       clearPurchaseOrder: true,
       clearError: true,
     );
+  }
+
+  void setSupplierDeliveryNote(String value) {
+    state = state.copyWith(supplierDeliveryNote: value, clearError: true);
   }
 
   Future<bool> fetchPurchaseOrderItemSelections() async {
@@ -262,9 +303,12 @@ class CreatePurchaseReceiptController
       final detail = await _repository.fetchPurchaseOrderDetail(
         row.purchaseOrder,
       );
+      final toleranceRule = await ref
+          .read(purchaseReceiptToleranceSettingsRepositoryProvider)
+          .fetchRule();
       final pendingItems = detail.items
           .where((item) => item.pendingQty > 0)
-          .map(ReceiptDraftItem.fromPoItem)
+          .map((item) => ReceiptDraftItem.fromPoItem(item, toleranceRule))
           .toList();
 
       if (pendingItems.isEmpty) {
@@ -277,6 +321,7 @@ class CreatePurchaseReceiptController
 
       state = state.copyWith(
         selectedSupplier: detail.supplier,
+        supplierFields: detail.supplierFields,
         selectedPurchaseOrder: PendingPurchaseOrder(
           name: detail.name,
           supplier: detail.supplier,
@@ -317,6 +362,7 @@ class CreatePurchaseReceiptController
     final draft = ReceiptAttachmentDraft(
       filePath: filePath,
       fileName: fileName,
+      capturedAt: DateTime.now(),
     );
     state = type == PurchaseReceiptAttachmentType.material
         ? state.copyWith(materialAttachmentDraft: draft, clearError: true)
@@ -353,6 +399,8 @@ class CreatePurchaseReceiptController
             supplier: state.selectedSupplier!,
             postingDate: DateTime.now(),
             purchaseOrder: po.name,
+            supplierDeliveryNote: state.supplierDeliveryNote,
+            supplierFields: state.supplierFields,
             items: items,
           );
       await _uploadCapturedAttachments(receiptName);
@@ -373,10 +421,15 @@ class CreatePurchaseReceiptController
     if (material != null) {
       state = state.copyWith(isUploadingMaterial: true);
       try {
-        await _repository.uploadAttachment(
+        final uploaded = await _repository.uploadAttachment(
           filePath: material.filePath,
           fileName: material.fileName,
           docName: docName,
+        );
+        await _repository.updateAttachmentFields(
+          name: docName,
+          materialReceiptUrl: uploaded.fileUrl,
+          materialReceiptCapturedAt: material.capturedAt,
         );
       } finally {
         state = state.copyWith(isUploadingMaterial: false);
@@ -385,10 +438,15 @@ class CreatePurchaseReceiptController
     if (invoice != null) {
       state = state.copyWith(isUploadingInvoice: true);
       try {
-        await _repository.uploadAttachment(
+        final uploaded = await _repository.uploadAttachment(
           filePath: invoice.filePath,
           fileName: invoice.fileName,
           docName: docName,
+        );
+        await _repository.updateAttachmentFields(
+          name: docName,
+          invoiceReceiptUrl: uploaded.fileUrl,
+          invoiceReceiptCapturedAt: invoice.capturedAt,
         );
       } finally {
         state = state.copyWith(isUploadingInvoice: false);
@@ -413,8 +471,8 @@ class CreatePurchaseReceiptController
       return 'Enter receive quantity for at least one item.';
     }
     for (final item in receivableItems) {
-      if (item.receiveQty > item.pendingQty) {
-        return '${item.itemCode} receive qty cannot exceed pending qty.';
+      if (item.receiveQty > item.maxReceiveQty) {
+        return _toleranceMessage(item);
       }
       if (item.warehouse.isEmpty) {
         return '${item.itemCode} warehouse is required.';
@@ -450,13 +508,20 @@ class CreatePurchaseReceiptController
         state = state.copyWith(errorMessage: message);
         throw message;
       }
-      if (item.receiveQty > current.pendingQty) {
-        final message =
-            '${item.itemCode} receive qty cannot exceed current pending qty.';
+      final maxReceiveQty =
+          current.qty * (1 + item.tolerancePercentage / 100) -
+          current.receivedQty;
+      if (item.receiveQty > maxReceiveQty) {
+        final message = _toleranceMessage(item, currentMax: maxReceiveQty);
         state = state.copyWith(errorMessage: message);
         throw message;
       }
     }
+  }
+
+  String _toleranceMessage(ReceiptDraftItem item, {double? currentMax}) {
+    final maxQty = currentMax ?? item.maxReceiveQty;
+    return '${item.itemCode} receive qty cannot exceed allowed tolerance qty ${_formatQty(maxQty)}.';
   }
 
   String _friendlyError(Object error) {
@@ -469,4 +534,9 @@ class CreatePurchaseReceiptController
     }
     return message.replaceFirst('Exception: ', '');
   }
+}
+
+String _formatQty(double value) {
+  if (value == value.roundToDouble()) return value.toStringAsFixed(0);
+  return value.toStringAsFixed(2);
 }

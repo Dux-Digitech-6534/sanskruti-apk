@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/widgets/app_button.dart';
@@ -25,7 +26,15 @@ class CreatePurchaseRequestScreen extends ConsumerStatefulWidget {
 class _CreatePurchaseRequestScreenState
     extends ConsumerState<CreatePurchaseRequestScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _requestDateController = TextEditingController();
+  final _remarkController = TextEditingController();
   bool _isOpeningFreshForm = true;
+
+  static const _priorityOptions = [
+    LookupOption(id: 'Low', label: 'Low'),
+    LookupOption(id: 'Medium', label: 'Medium'),
+    LookupOption(id: 'High', label: 'High'),
+  ];
 
   @override
   void initState() {
@@ -39,6 +48,9 @@ class _CreatePurchaseRequestScreenState
       );
       controller.reset();
       final state = ref.read(createPurchaseRequestControllerProvider);
+      if (state.scheduleDate != null) {
+        _requestDateController.text = _displayDate(state.scheduleDate!);
+      }
       debugPrint('ITEM COUNT: ${state.items.length}');
       await controller.loadLookups();
       if (!mounted) return;
@@ -46,6 +58,31 @@ class _CreatePurchaseRequestScreenState
         _isOpeningFreshForm = false;
       });
     });
+  }
+
+  @override
+  void dispose() {
+    _requestDateController.dispose();
+    _remarkController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickRequestDate() async {
+    final controller = ref.read(
+      createPurchaseRequestControllerProvider.notifier,
+    );
+    final state = ref.read(createPurchaseRequestControllerProvider);
+    final now = DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: state.scheduleDate ?? now,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 5),
+    );
+    if (selected == null) return;
+    final normalized = DateTime(selected.year, selected.month, selected.day);
+    controller.setScheduleDate(normalized);
+    _requestDateController.text = _displayDate(normalized);
   }
 
   Future<void> _openAddItemSheet() async {
@@ -79,21 +116,71 @@ class _CreatePurchaseRequestScreenState
     ref.read(createPurchaseRequestControllerProvider.notifier).addItem(item);
   }
 
-  Future<void> _saveAndSubmit() async {
+  Future<void> _pickAttachment() async {
+    final source = await _selectAttachmentSource();
+    if (!mounted || source == null) return;
+
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      imageQuality: 70,
+    );
+    if (!mounted || picked == null) return;
+    if (picked.path.isEmpty) {
+      _showMessage('Unable to read captured image.');
+      return;
+    }
+
+    ref
+        .read(createPurchaseRequestControllerProvider.notifier)
+        .captureAttachment(filePath: picked.path, fileName: picked.name);
+    _showMessage('${picked.name} captured. It will upload after save.');
+  }
+
+  Future<ImageSource?> _selectAttachmentSource() {
+    return showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: Text(context.l10n.t('camera')),
+              onTap: () => Navigator.of(context).pop(ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: Text(context.l10n.t('gallery')),
+              onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveMaterialRequest() async {
     debugPrint('[CreatePurchaseRequest] Save clicked');
     if (!_formKey.currentState!.validate()) return;
     try {
-      final createdName = await ref
+      final detail = await ref
           .read(createPurchaseRequestControllerProvider.notifier)
-          .createAndSubmit();
+          .createAndSave();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(context.l10n.message('$createdName submitted.')),
+          content: Text(
+            context.l10n.message(
+              'Material Request created successfully: '
+              '${detail.name} (${detail.displayWorkflowState})',
+            ),
+          ),
         ),
       );
       ref.invalidate(purchaseRequestControllerProvider);
-      context.go('/purchase-request');
+      context.go(
+        '/purchase-request-detail/${Uri.encodeComponent(detail.name)}',
+      );
     } on Object catch (error) {
       if (!mounted) return;
       _showMessage(error.toString());
@@ -120,6 +207,10 @@ class _CreatePurchaseRequestScreenState
     final controller = ref.read(
       createPurchaseRequestControllerProvider.notifier,
     );
+    if (state.scheduleDate != null &&
+        _requestDateController.text != _displayDate(state.scheduleDate!)) {
+      _requestDateController.text = _displayDate(state.scheduleDate!);
+    }
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -143,7 +234,7 @@ class _CreatePurchaseRequestScreenState
           : _StickySubmitBar(
               isSubmitting: state.isSubmitting,
               itemCount: state.items.length,
-              onSave: _saveAndSubmit,
+              onSave: _saveMaterialRequest,
             ),
       body: state.isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -215,7 +306,58 @@ class _CreatePurchaseRequestScreenState
                                   )
                                 : const SizedBox.shrink(),
                           ),
+                          const SizedBox(height: 18),
+                          AppTextField(
+                            controller: _requestDateController,
+                            hintText: context.l10n.t('required_date'),
+                            prefixIcon: Icons.calendar_today_outlined,
+                            readOnly: true,
+                            onTap: state.isSubmitting ? null : _pickRequestDate,
+                            validator: (_) => state.scheduleDate == null
+                                ? context.l10n.message(
+                                    'Required date is required',
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(height: 18),
+                          SearchableComboBox<LookupOption>(
+                            label: context.l10n.t('priority'),
+                            value: state.priority,
+                            items: _priorityOptions,
+                            itemValue: (priority) => priority.id,
+                            itemLabel: (priority) => priority.label,
+                            prefixIcon: Icons.priority_high_outlined,
+                            onChanged: state.isSubmitting
+                                ? (_) {}
+                                : controller.setPriority,
+                            validator: (value) => value == null
+                                ? context.l10n.message('Priority is required.')
+                                : null,
+                          ),
+                          const SizedBox(height: 18),
+                          AppTextField(
+                            controller: _remarkController,
+                            hintText: context.l10n.t('remark'),
+                            prefixIcon: Icons.notes_outlined,
+                            maxLines: 3,
+                            onChanged: controller.setRemark,
+                          ),
                         ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    _SectionCard(
+                      title: context.l10n.t('material_attachment'),
+                      icon: Icons.image_outlined,
+                      child: _AttachmentRow(
+                        attachment: state.materialAttachmentDraft,
+                        isUploading: state.isUploadingAttachment,
+                        onAttach: state.isSubmitting ? null : _pickAttachment,
+                        onClear:
+                            state.isSubmitting ||
+                                state.materialAttachmentDraft == null
+                            ? null
+                            : controller.clearAttachment,
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -253,6 +395,73 @@ class _CreatePurchaseRequestScreenState
   }
 }
 
+class _AttachmentRow extends StatelessWidget {
+  const _AttachmentRow({
+    required this.attachment,
+    required this.isUploading,
+    required this.onAttach,
+    required this.onClear,
+  });
+
+  final MaterialRequestAttachmentDraft? attachment;
+  final bool isUploading;
+  final VoidCallback? onAttach;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                attachment == null
+                    ? context.l10n.t('no_attachments_found')
+                    : attachment!.fileName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: attachment == null
+                      ? AppColors.mutedText
+                      : AppColors.text,
+                  fontWeight: attachment == null
+                      ? FontWeight.w500
+                      : FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (attachment != null)
+          IconButton(
+            tooltip: context.l10n.t('clear'),
+            onPressed: onClear,
+            icon: const Icon(Icons.clear, color: AppColors.danger),
+          ),
+        TextButton.icon(
+          style: TextButton.styleFrom(
+            backgroundColor: AppColors.background,
+            foregroundColor: AppColors.text,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          onPressed: isUploading ? null : onAttach,
+          icon: isUploading
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.attach_file, size: 18),
+          label: Text(context.l10n.t('attach')),
+        ),
+      ],
+    );
+  }
+}
+
 class _AddItemSheet extends StatefulWidget {
   const _AddItemSheet({required this.items, required this.loadItemDetail});
 
@@ -277,6 +486,14 @@ class _AddItemSheetState extends State<_AddItemSheet> {
   bool _isLoadingItem = false;
 
   @override
+  void initState() {
+    super.initState();
+    final today = DateTime.now();
+    _scheduleDate = DateTime(today.year, today.month, today.day);
+    _dateController.text = _displayDate(_scheduleDate!);
+  }
+
+  @override
   void dispose() {
     _dateController.dispose();
     _qtyController.dispose();
@@ -288,7 +505,7 @@ class _AddItemSheetState extends State<_AddItemSheet> {
     final now = DateTime.now();
     final selected = await showDatePicker(
       context: context,
-      initialDate: now,
+      initialDate: _scheduleDate ?? now,
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 3),
     );
@@ -453,24 +670,10 @@ class _AddItemSheetState extends State<_AddItemSheet> {
                         maxLines: 3,
                       ),
                       const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _AutoValueTile(
-                              label: context.l10n.t('uom'),
-                              value: _uom.isEmpty ? '-' : _uom,
-                              isLoading: _isLoadingItem,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _AutoValueTile(
-                              label: context.l10n.t('conversion_factor'),
-                              value: _formatQty(_conversionFactor),
-                              isLoading: _isLoadingItem,
-                            ),
-                          ),
-                        ],
+                      _AutoValueTile(
+                        label: context.l10n.t('uom'),
+                        value: _uom.isEmpty ? '-' : _uom,
+                        isLoading: _isLoadingItem,
                       ),
                       const SizedBox(height: 18),
                       AppButton(
@@ -692,10 +895,6 @@ class _ItemSummaryCard extends StatelessWidget {
                     _InfoChip(
                       icon: Icons.scale_outlined,
                       label: '${_formatQty(item.qty)} ${item.uom}',
-                    ),
-                    _InfoChip(
-                      icon: Icons.swap_horiz_outlined,
-                      label: _formatQty(item.conversionFactor),
                     ),
                   ],
                 ),

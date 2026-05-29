@@ -3,7 +3,7 @@ import 'api/api_config.dart';
 class AppConstants {
   AppConstants._();
 
-  static const appName = 'Sanskruti Group';
+  static const appName = 'Dux Purchase Master';
   static const backendBaseUrl = ApiConfig.baseUrl;
   static const loginPath = '/api/method/login';
   static const resourcePath = '/api/resource';

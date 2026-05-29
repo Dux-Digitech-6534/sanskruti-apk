@@ -113,7 +113,7 @@ class _WorkflowBanner extends StatelessWidget {
       'Material Request',
       'Supplier Quotation',
       'Purchase Order',
-      'Purchase Receipt',
+      'Material Received',
     ];
     return Container(
       padding: const EdgeInsets.all(18),

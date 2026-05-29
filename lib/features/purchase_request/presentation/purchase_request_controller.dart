@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../models/material_request_status.dart';
 import '../../../models/purchase_request.dart';
+import '../../../models/purchase_request_form_models.dart';
 import '../../../repositories/purchase_request_repository.dart';
 
 final purchaseRequestControllerProvider =
@@ -11,8 +13,8 @@ final purchaseRequestControllerProvider =
 enum PurchaseRequestStatusFilter {
   all('All'),
   pending('Pending'),
-  approved('Approved'),
-  rejected('Rejected');
+  ordered('Ordered'),
+  received('Received');
 
   const PurchaseRequestStatusFilter(this.label);
 
@@ -22,22 +24,28 @@ enum PurchaseRequestStatusFilter {
 class PurchaseRequestListState {
   const PurchaseRequestListState({
     this.items = const [],
+    this.projects = const [],
     this.search = '',
+    this.selectedProject,
     this.statusFilter = PurchaseRequestStatusFilter.all,
     this.fromDate,
     this.toDate,
     this.isLoading = false,
+    this.isLoadingProjects = false,
     this.isLoadingMore = false,
     this.hasMore = true,
     this.errorMessage,
   });
 
   final List<PurchaseRequest> items;
+  final List<LookupOption> projects;
   final String search;
+  final String? selectedProject;
   final PurchaseRequestStatusFilter statusFilter;
   final DateTime? fromDate;
   final DateTime? toDate;
   final bool isLoading;
+  final bool isLoadingProjects;
   final bool isLoadingMore;
   final bool hasMore;
   final String? errorMessage;
@@ -48,22 +56,12 @@ class PurchaseRequestListState {
           if (!_matchesSearch(request)) return false;
           return switch (statusFilter) {
             PurchaseRequestStatusFilter.all => true,
-            PurchaseRequestStatusFilter.pending => _matchesAny(request, const [
-              'pending',
-              'draft',
-            ]),
-            PurchaseRequestStatusFilter.approved => _matchesAny(request, const [
-              'approved',
-              'ordered',
-              'received',
-              'issued',
-              'transferred',
-            ]),
-            PurchaseRequestStatusFilter.rejected => _matchesAny(request, const [
-              'rejected',
-              'cancelled',
-              'stopped',
-            ]),
+            PurchaseRequestStatusFilter.pending =>
+              MaterialRequestStatus.isPendingLike(request.displayStatus),
+            PurchaseRequestStatusFilter.ordered =>
+              MaterialRequestStatus.isOrderedLike(request.displayStatus),
+            PurchaseRequestStatusFilter.received =>
+              MaterialRequestStatus.isReceivedLike(request.displayStatus),
           };
         })
         .where(_matchesDate)
@@ -72,34 +70,38 @@ class PurchaseRequestListState {
 
   PurchaseRequestListState copyWith({
     List<PurchaseRequest>? items,
+    List<LookupOption>? projects,
     String? search,
+    String? selectedProject,
     PurchaseRequestStatusFilter? statusFilter,
     DateTime? fromDate,
     DateTime? toDate,
     bool? isLoading,
+    bool? isLoadingProjects,
     bool? isLoadingMore,
     bool? hasMore,
     String? errorMessage,
     bool clearError = false,
+    bool clearProject = false,
     bool clearFromDate = false,
     bool clearToDate = false,
   }) {
     return PurchaseRequestListState(
       items: items ?? this.items,
+      projects: projects ?? this.projects,
       search: search ?? this.search,
+      selectedProject: clearProject
+          ? null
+          : selectedProject ?? this.selectedProject,
       statusFilter: statusFilter ?? this.statusFilter,
       fromDate: clearFromDate ? null : fromDate ?? this.fromDate,
       toDate: clearToDate ? null : toDate ?? this.toDate,
       isLoading: isLoading ?? this.isLoading,
+      isLoadingProjects: isLoadingProjects ?? this.isLoadingProjects,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       hasMore: hasMore ?? this.hasMore,
       errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
     );
-  }
-
-  bool _matchesAny(PurchaseRequest request, List<String> values) {
-    final status = request.status.trim().toLowerCase();
-    return values.any((value) => status.contains(value));
   }
 
   bool _matchesSearch(PurchaseRequest request) {
@@ -108,9 +110,12 @@ class PurchaseRequestListState {
     return [
       request.name,
       request.status,
+      request.displayStatus,
       request.site,
       request.requiredDate ?? '',
       request.requestType ?? '',
+      request.priority ?? '',
+      ...request.searchTerms,
     ].any((value) => value.toLowerCase().contains(query));
   }
 
@@ -155,6 +160,7 @@ class PurchaseRequestController extends Notifier<PurchaseRequestListState> {
         limitStart: 0,
         limitPageLength: _pageSize,
         search: state.search,
+        project: state.selectedProject,
       );
       state = state.copyWith(
         items: items,
@@ -164,6 +170,20 @@ class PurchaseRequestController extends Notifier<PurchaseRequestListState> {
     } on Object catch (error) {
       state = state.copyWith(
         isLoading: false,
+        errorMessage: _friendlyError(error),
+      );
+    }
+  }
+
+  Future<void> loadProjectOptions() async {
+    if (state.isLoadingProjects || state.projects.isNotEmpty) return;
+    state = state.copyWith(isLoadingProjects: true, clearError: true);
+    try {
+      final projects = await _repository.fetchProjects();
+      state = state.copyWith(projects: projects, isLoadingProjects: false);
+    } on Object catch (error) {
+      state = state.copyWith(
+        isLoadingProjects: false,
         errorMessage: _friendlyError(error),
       );
     }
@@ -179,6 +199,7 @@ class PurchaseRequestController extends Notifier<PurchaseRequestListState> {
         limitStart: state.items.length,
         limitPageLength: _pageSize,
         search: state.search,
+        project: state.selectedProject,
       );
       state = state.copyWith(
         items: [...state.items, ...items],
@@ -195,6 +216,11 @@ class PurchaseRequestController extends Notifier<PurchaseRequestListState> {
 
   Future<void> setSearch(String value) async {
     state = state.copyWith(search: value);
+    await loadInitial();
+  }
+
+  Future<void> setProjectFilter(String? value) async {
+    state = state.copyWith(selectedProject: value, clearProject: value == null);
     await loadInitial();
   }
 

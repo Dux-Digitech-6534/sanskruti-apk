@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 class AppConstants {
   const AppConstants._();
 
-  static const appName = 'Sanskruti Developers';
+  static const appName = 'Dux Purchase Master';
   static const poweredBy = 'Dux Digitech';
   static const logoAsset = 'assets/images/sanskruti_logo.png';
+  static const duxLogoAsset = 'assets/images/dux_digitech_logo.jpg';
   static const requestTimeout = Duration(seconds: 90);
 }
 

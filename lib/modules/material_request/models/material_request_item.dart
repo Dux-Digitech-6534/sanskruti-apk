@@ -13,7 +13,9 @@ class MaterialRequestItem {
        quantityController = TextEditingController(text: quantity.toString()),
        uomController = TextEditingController(text: uom),
        warehouseController = TextEditingController(text: warehouse),
-       requiredByController = TextEditingController(text: requiredBy);
+       requiredByController = TextEditingController(
+         text: requiredBy.trim().isEmpty ? _todayApiDate() : requiredBy,
+       );
 
   final TextEditingController itemCodeController;
   final TextEditingController itemNameController;
@@ -46,4 +48,11 @@ class MaterialRequestItem {
     warehouseController.dispose();
     requiredByController.dispose();
   }
+}
+
+String _todayApiDate() {
+  final today = DateTime.now();
+  final month = today.month.toString().padLeft(2, '0');
+  final day = today.day.toString().padLeft(2, '0');
+  return '${today.year}-$month-$day';
 }

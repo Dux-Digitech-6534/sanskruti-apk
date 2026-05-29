@@ -10,8 +10,8 @@ class PurchaseReceiptListView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const ProcurementDocumentListView<PurchaseReceiptController>(
-      title: 'Purchase Receipts',
-      emptyTitle: 'No purchase receipts found',
+      title: 'Material Received',
+      emptyTitle: 'No material received records found',
       emptyMessage: 'Site receiving documents from ERPNext will appear here.',
       icon: Icons.inventory_2_outlined,
       detailsRoute: AppRoutes.purchaseReceiptDetails,

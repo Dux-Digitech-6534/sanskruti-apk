@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/api/api_client.dart';
+import '../../../core/api/api_config.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_button.dart';
@@ -9,7 +11,9 @@ import '../../../core/widgets/custom_app_bar.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../repositories/purchase_request_repository.dart';
+import '../../../repositories/dashboard_repository.dart';
 import 'purchase_request_detail_controller.dart';
+import 'purchase_request_controller.dart';
 
 class PurchaseRequestDetailScreen extends ConsumerStatefulWidget {
   const PurchaseRequestDetailScreen({required this.id, super.key});
@@ -33,23 +37,87 @@ class _PurchaseRequestDetailScreenState
     );
   }
 
-  Future<void> _submit() async {
+  Future<void> _applyWorkflowAction(String action) async {
+    final rejectionRemark = _isRejectAction(action)
+        ? await _askRejectionRemark()
+        : null;
+    if (_isRejectAction(action) && rejectionRemark == null) return;
+
     try {
       await ref
           .read(purchaseRequestDetailControllerProvider(widget.id).notifier)
-          .submit();
+          .applyWorkflowAction(action, rejectionRemark: rejectionRemark);
       if (!mounted) return;
+      ref.invalidate(purchaseRequestControllerProvider);
+      ref.invalidate(dashboardDataProvider);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.l10n.message('Material Request submitted.')),
-        ),
+        SnackBar(content: Text(context.l10n.message('$action completed.'))),
       );
     } on Object catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.toString())));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
     }
+  }
+
+  Future<String?> _askRejectionRemark() async {
+    final controller = TextEditingController();
+    String? errorText;
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text(context.l10n.t('rejection_reason')),
+              content: TextField(
+                controller: controller,
+                autofocus: true,
+                minLines: 4,
+                maxLines: 6,
+                textInputAction: TextInputAction.newline,
+                decoration: InputDecoration(
+                  labelText: context.l10n.t('reason_remark_required'),
+                  errorText: errorText,
+                  alignLabelWithHint: true,
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: Text(context.l10n.t('cancel')),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final value = controller.text.trim();
+                    if (value.isEmpty) {
+                      setState(() {
+                        errorText = context.l10n.message(
+                          'Rejection remark is required.',
+                        );
+                      });
+                      return;
+                    }
+                    Navigator.of(dialogContext).pop(value);
+                  },
+                  child: Text(context.l10n.t('reject')),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    controller.dispose();
+    return result;
+  }
+
+  bool _isRejectAction(String action) {
+    return action.trim().toLowerCase().contains('reject');
   }
 
   @override
@@ -59,15 +127,11 @@ class _PurchaseRequestDetailScreenState
 
     return Scaffold(
       appBar: CustomAppBar(title: widget.id),
-      bottomNavigationBar: detail != null && detail.isDraft
-          ? SafeArea(
-              minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: AppButton(
-                label: context.l10n.t('submit'),
-                icon: Icons.check_circle_outline,
-                isLoading: state.isSubmitting,
-                onPressed: _submit,
-              ),
+      bottomNavigationBar: detail != null && state.workflowActions.isNotEmpty
+          ? _WorkflowActionsBar(
+              actions: state.workflowActions,
+              actionInProgress: state.workflowActionInProgress,
+              onAction: _applyWorkflowAction,
             )
           : null,
       body: RefreshIndicator(
@@ -99,7 +163,24 @@ class _PurchaseRequestDetailScreenState
                 onRetry: () => context.pop(),
               )
             else
-              _DetailContent(detail: detail),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (state.isLoadingWorkflowActions)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: LinearProgressIndicator(minHeight: 2),
+                    ),
+                  if (state.workflowErrorMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _WarningBanner(
+                        message: state.workflowErrorMessage!,
+                      ),
+                    ),
+                  _DetailContent(detail: detail),
+                ],
+              ),
           ],
         ),
       ),
@@ -132,10 +213,14 @@ class _DetailContent extends StatelessWidget {
                       ),
                     ),
                   ),
-                  StatusBadge(label: detail.status),
+                  StatusBadge(label: detail.displayWorkflowState),
                 ],
               ),
               const SizedBox(height: 14),
+              _InfoLine(
+                label: context.l10n.t('required_date'),
+                value: Formatters.dateString(detail.scheduleDate),
+              ),
               _InfoLine(
                 label: context.l10n.t('project'),
                 value: detail.project,
@@ -149,6 +234,24 @@ class _DetailContent extends StatelessWidget {
                 value: detail.category,
               ),
               _InfoLine(
+                label: context.l10n.t('priority'),
+                value: detail.priority,
+              ),
+              _InfoLine(
+                label: context.l10n.t('workflow_state'),
+                value: detail.displayWorkflowState,
+              ),
+              if (detail.remark.isNotEmpty)
+                _InfoLine(
+                  label: context.l10n.t('remark'),
+                  value: detail.remark,
+                ),
+              if (detail.materialAttachmentUrl.isNotEmpty)
+                _InfoLine(
+                  label: context.l10n.t('material_attachment'),
+                  value: _fileNameFromUrl(detail.materialAttachmentUrl),
+                ),
+              _InfoLine(
                 label: context.l10n.t('document'),
                 value: detail.docstatus == 0
                     ? context.l10n.t('draft')
@@ -160,6 +263,15 @@ class _DetailContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+        if (detail.materialAttachmentUrl.isNotEmpty) ...[
+          Text(
+            context.l10n.t('material_attachment'),
+            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+          ),
+          const SizedBox(height: 10),
+          _MaterialAttachmentCard(fileUrl: detail.materialAttachmentUrl),
+          const SizedBox(height: 16),
+        ],
         Text(
           context.l10n.t('items'),
           style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
@@ -170,6 +282,136 @@ class _DetailContent extends StatelessWidget {
         else
           ...detail.items.map(_ItemCard.new),
       ],
+    );
+  }
+}
+
+class _WorkflowActionsBar extends StatelessWidget {
+  const _WorkflowActionsBar({
+    required this.actions,
+    required this.actionInProgress,
+    required this.onAction,
+  });
+
+  final List<WorkflowAction> actions;
+  final String? actionInProgress;
+  final ValueChanged<String> onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: AppColors.border)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final action in actions) ...[
+              AppButton(
+                label: action.action,
+                icon: Icons.check_circle_outline,
+                isLoading: actionInProgress == action.action,
+                onPressed: actionInProgress == null
+                    ? () => onAction(action.action)
+                    : null,
+              ),
+              if (action != actions.last) const SizedBox(height: 8),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WarningBanner extends StatelessWidget {
+  const _WarningBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return _InfoCard(
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: AppColors.danger),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              context.l10n.message(message),
+              style: const TextStyle(color: AppColors.danger),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MaterialAttachmentCard extends ConsumerWidget {
+  const _MaterialAttachmentCard({required this.fileUrl});
+
+  final String fileUrl;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final imageUrl = _absoluteFileUrl(fileUrl);
+
+    return _InfoCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.attach_file, color: AppColors.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _fileNameFromUrl(fileUrl),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          if (_isImageName(fileUrl) && imageUrl != null) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: FutureBuilder<String?>(
+                future: ref.read(secureStorageProvider).readSessionCookie(),
+                builder: (context, snapshot) {
+                  final cookie = snapshot.data;
+                  return Image.network(
+                    imageUrl,
+                    height: 160,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    headers: cookie == null || cookie.isEmpty
+                        ? null
+                        : {'Cookie': cookie},
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      height: 96,
+                      alignment: Alignment.center,
+                      color: AppColors.background,
+                      child: Text(
+                        context.l10n.t('image_preview_unavailable'),
+                        style: const TextStyle(color: AppColors.mutedText),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -295,4 +537,29 @@ class _MessageState extends StatelessWidget {
 String _formatQty(double value) {
   if (value == value.roundToDouble()) return value.toStringAsFixed(0);
   return value.toStringAsFixed(2);
+}
+
+String? _absoluteFileUrl(String fileUrl) {
+  if (fileUrl.isEmpty) return null;
+  final uri = Uri.tryParse(fileUrl);
+  if (uri != null && uri.hasScheme) return uri.toString();
+  return ApiConfig.baseUri.resolve(fileUrl).toString();
+}
+
+String _fileNameFromUrl(String fileUrl) {
+  final uri = Uri.tryParse(fileUrl);
+  final segments = uri?.pathSegments;
+  if (segments != null && segments.isNotEmpty) {
+    return Uri.decodeComponent(segments.last);
+  }
+  return fileUrl;
+}
+
+bool _isImageName(String value) {
+  final lower = value.toLowerCase();
+  return lower.endsWith('.jpg') ||
+      lower.endsWith('.jpeg') ||
+      lower.endsWith('.png') ||
+      lower.endsWith('.webp') ||
+      lower.endsWith('.gif');
 }

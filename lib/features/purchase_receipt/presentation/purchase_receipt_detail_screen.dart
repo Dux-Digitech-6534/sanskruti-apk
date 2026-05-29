@@ -45,7 +45,7 @@ class _PurchaseReceiptDetailScreenState
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(context.l10n.message('Purchase Receipt Submitted.')),
+          content: Text(context.l10n.message('Material Received Submitted.')),
         ),
       );
     } on Object catch (error) {
@@ -165,6 +165,11 @@ class _HeaderCard extends StatelessWidget {
             label: context.l10n.t('posting_date'),
             value: Formatters.dateString(receipt.postingDate),
           ),
+          if (receipt.supplierDeliveryNote.isNotEmpty)
+            _InfoLine(
+              label: context.l10n.t('supplier_delivery_note'),
+              value: receipt.supplierDeliveryNote,
+            ),
           _InfoLine(
             label: context.l10n.t('total'),
             value: Formatters.currency(
