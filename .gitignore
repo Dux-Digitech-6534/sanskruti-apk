@@ -33,6 +33,16 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Keep release APK/output artifacts for GitHub handoff.
+!/build/
+/build/*
+!/build/app/
+/build/app/*
+!/build/app/outputs/
+!/build/app/outputs/**
+/build/app/outputs/apk/debug/*.apk
+/build/app/outputs/flutter-apk/app-debug.apk
+
 # Symbolication related
 app.*.symbols
 
