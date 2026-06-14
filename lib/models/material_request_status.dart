@@ -49,10 +49,14 @@ class MaterialRequestStatus {
     return _containsAny(lower, const [
       'pending',
       'approval',
-      'draft',
       'open',
       'submitted',
     ]);
+  }
+
+  static bool isDraftLike(String value) {
+    final lower = value.trim().toLowerCase();
+    return lower == 'draft';
   }
 
   static bool isOrderedLike(String value) {
@@ -63,6 +67,16 @@ class MaterialRequestStatus {
   static bool isReceivedLike(String value) {
     final lower = value.trim().toLowerCase();
     return lower.contains('received') || lower == 'completed';
+  }
+
+  static bool isRejectedLike(String value) {
+    final lower = value.trim().toLowerCase();
+    return lower.contains('reject');
+  }
+
+  static bool isCancelledLike(String value) {
+    final lower = value.trim().toLowerCase();
+    return lower.contains('cancel');
   }
 
   static String _firstNonEmpty(List<String?> values) {

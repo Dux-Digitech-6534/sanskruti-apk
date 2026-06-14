@@ -3,6 +3,7 @@ class PurchaseReceipt {
     required this.name,
     required this.supplier,
     required this.status,
+    required this.docstatus,
     this.postingDate,
     this.searchTerms = const [],
   });
@@ -10,6 +11,7 @@ class PurchaseReceipt {
   final String name;
   final String supplier;
   final String status;
+  final int docstatus;
   final String? postingDate;
   final List<String> searchTerms;
 
@@ -18,10 +20,17 @@ class PurchaseReceipt {
       name: json['name']?.toString() ?? '',
       supplier: json['supplier']?.toString() ?? '-',
       status: json['status']?.toString() ?? 'Draft',
+      docstatus: _toInt(json['docstatus']),
       postingDate: json['posting_date']?.toString(),
       searchTerms: _searchTerms(json),
     );
   }
+}
+
+int _toInt(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? 0;
 }
 
 List<String> _searchTerms(Map<String, dynamic> json) {

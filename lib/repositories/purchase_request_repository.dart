@@ -192,6 +192,66 @@ class PurchaseRequestRepository {
     return _lookupList(response.data);
   }
 
+  Future<List<LookupOption>> fetchSubCategories({
+    required String category,
+  }) async {
+    final trimmedCategory = category.trim();
+    if (trimmedCategory.isEmpty) return const [];
+
+    const attempts = [
+      _SubCategoryLookupAttempt(
+        doctype: 'Material Sub Category',
+        categoryField: 'category',
+      ),
+      _SubCategoryLookupAttempt(
+        doctype: 'Material Sub Category',
+        categoryField: 'custom_category',
+      ),
+      _SubCategoryLookupAttempt(
+        doctype: 'Material Sub Category',
+        categoryField: 'material_category',
+      ),
+      _SubCategoryLookupAttempt(
+        doctype: 'Material Subcategory',
+        categoryField: 'category',
+      ),
+      _SubCategoryLookupAttempt(
+        doctype: 'Material Subcategory',
+        categoryField: 'custom_category',
+      ),
+      _SubCategoryLookupAttempt(
+        doctype: 'Item Sub Category',
+        categoryField: 'category',
+      ),
+      _SubCategoryLookupAttempt(
+        doctype: 'Item Sub Category',
+        categoryField: 'custom_category',
+      ),
+    ];
+
+    for (final attempt in attempts) {
+      try {
+        final response = await _apiClient.get(
+          '${ApiEndpoints.resource}/${Uri.encodeComponent(attempt.doctype)}',
+          queryParameters: {
+            'fields': jsonEncode(['name']),
+            'filters': jsonEncode([
+              [attempt.categoryField, '=', trimmedCategory],
+            ]),
+            'order_by': 'name asc',
+            'limit_page_length': 100,
+          },
+        );
+        final options = _lookupList(response.data);
+        if (options.isNotEmpty) return options;
+      } on Object {
+        // Try the next likely ProcureFlow/Frappe field shape.
+      }
+    }
+
+    return const [];
+  }
+
   Future<List<LookupOption>> fetchWarehouses() async {
     final response = await _apiClient.get(
       '${ApiEndpoints.resource}/Warehouse',
@@ -209,20 +269,95 @@ class PurchaseRequestRepository {
 
   Future<List<ItemLookupOption>> fetchItemsByCategory({
     required String category,
+    String? subCategory,
     String search = '',
   }) async {
-    final filters = <List<String>>[];
-    filters.add(['custom_category', '=', category]);
+    final trimmedCategory = category.trim();
+    final trimmedSubCategory = subCategory?.trim() ?? '';
     final trimmedSearch = search.trim();
-    if (trimmedSearch.isNotEmpty) {
-      filters.add(['name', 'like', '%$trimmedSearch%']);
+
+    if (trimmedSubCategory.isNotEmpty) {
+      final subCategoryItems = await _fetchItemsByFilterAttempts(
+        category: trimmedCategory,
+        subCategory: trimmedSubCategory,
+        search: trimmedSearch,
+      );
+      return subCategoryItems;
     }
 
+    return _fetchItemsByFilters(
+      filters: [
+        ['custom_category', '=', trimmedCategory],
+      ],
+      search: trimmedSearch,
+    );
+  }
+
+  Future<List<ItemLookupOption>> _fetchItemsByFilterAttempts({
+    required String category,
+    required String subCategory,
+    required String search,
+  }) async {
+    const attempts = [
+      _ItemSubCategoryFilterAttempt(
+        categoryField: 'custom_category',
+        subCategoryField: 'custom_sub_category',
+      ),
+      _ItemSubCategoryFilterAttempt(
+        categoryField: 'custom_category',
+        subCategoryField: 'sub_category',
+      ),
+      _ItemSubCategoryFilterAttempt(
+        categoryField: 'custom_category',
+        subCategoryField: 'custom_subcategory',
+      ),
+      _ItemSubCategoryFilterAttempt(
+        categoryField: 'custom_category',
+        subCategoryField: 'item_sub_category',
+      ),
+      _ItemSubCategoryFilterAttempt(
+        categoryField: 'custom_category',
+        subCategoryField: 'material_sub_category',
+      ),
+    ];
+
+    Object? lastError;
+    for (final attempt in attempts) {
+      try {
+        return await _fetchItemsByFilters(
+          filters: [
+            [attempt.categoryField, '=', category],
+            [attempt.subCategoryField, '=', subCategory],
+          ],
+          search: search,
+        );
+      } on Object catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (lastError != null && kDebugMode) {
+      debugPrint(
+        '[PurchaseRequestRepository] sub category item lookup failed: '
+        '$lastError',
+      );
+    }
+    return const [];
+  }
+
+  Future<List<ItemLookupOption>> _fetchItemsByFilters({
+    required List<List<String>> filters,
+    required String search,
+  }) async {
+    final effectiveFilters = [...filters];
+    if (search.isNotEmpty) {
+      effectiveFilters.add(['name', 'like', '%$search%']);
+    }
     final response = await _apiClient.get(
       '${ApiEndpoints.resource}/Item',
       queryParameters: {
         'fields': jsonEncode(['name', 'item_name', 'stock_uom']),
-        'filters': jsonEncode(filters),
+        'filters': jsonEncode(effectiveFilters),
         'order_by': 'modified desc',
         'limit_page_length': 100,
       },
@@ -298,6 +433,7 @@ class PurchaseRequestRepository {
     required String project,
     required String warehouse,
     required String category,
+    String? subCategory,
     required DateTime scheduleDate,
     required String priority,
     required String remark,
@@ -311,6 +447,8 @@ class PurchaseRequestRepository {
       'set_warehouse': warehouse,
       'material_category': category,
       'custom_category': category,
+      if (subCategory?.trim().isNotEmpty == true)
+        'custom_sub_category': subCategory!.trim(),
       'custom_priority': priority,
       if (remark.trim().isNotEmpty) 'custom_remark': remark.trim(),
       'schedule_date': _apiDate(scheduleDate),
@@ -324,6 +462,8 @@ class PurchaseRequestRepository {
               'conversion_factor': item.conversionFactor,
               if (item.specification.trim().isNotEmpty)
                 'custom_specification': item.specification.trim(),
+              if (item.remark.trim().isNotEmpty)
+                'custom_remark': item.remark.trim(),
               if (warehouse.isNotEmpty) 'warehouse': warehouse,
             },
           )
@@ -334,9 +474,9 @@ class PurchaseRequestRepository {
       debugPrint('[PurchaseRequestRepository] create body: $body');
     }
 
-    final response = await _apiClient.post(
-      '${ApiEndpoints.resource}/Material Request',
-      data: body,
+    final response = await _createMaterialRequestWithOptionalSubCategory(
+      body: body,
+      hasSubCategory: subCategory?.trim().isNotEmpty == true,
     );
 
     if (kDebugMode) {
@@ -348,6 +488,34 @@ class PurchaseRequestRepository {
     final data = response.data is Map ? response.data['data'] : null;
     if (data is Map && data['name'] != null) return data['name'].toString();
     throw Exception('Material Request created but could not be reloaded');
+  }
+
+  Future<Response<dynamic>> _createMaterialRequestWithOptionalSubCategory({
+    required Map<String, Object> body,
+    required bool hasSubCategory,
+  }) async {
+    try {
+      return await _apiClient.post(
+        '${ApiEndpoints.resource}/Material Request',
+        data: body,
+      );
+    } on Object catch (error) {
+      if (!hasSubCategory || !_looksLikeUnknownField(error)) rethrow;
+      final fallbackBody = Map<String, Object>.from(body)
+        ..remove('custom_sub_category');
+      return _apiClient.post(
+        '${ApiEndpoints.resource}/Material Request',
+        data: fallbackBody,
+      );
+    }
+  }
+
+  bool _looksLikeUnknownField(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('custom_sub_category') ||
+        message.contains('unknown') ||
+        message.contains('field not permitted') ||
+        message.contains('not found');
   }
 
   Future<UploadedMaterialAttachment> uploadMaterialAttachment({
@@ -544,6 +712,26 @@ class PurchaseRequestRepository {
   }
 }
 
+class _SubCategoryLookupAttempt {
+  const _SubCategoryLookupAttempt({
+    required this.doctype,
+    required this.categoryField,
+  });
+
+  final String doctype;
+  final String categoryField;
+}
+
+class _ItemSubCategoryFilterAttempt {
+  const _ItemSubCategoryFilterAttempt({
+    required this.categoryField,
+    required this.subCategoryField,
+  });
+
+  final String categoryField;
+  final String subCategoryField;
+}
+
 class MaterialRequestItemDraft {
   const MaterialRequestItemDraft({
     required this.itemCode,
@@ -552,6 +740,7 @@ class MaterialRequestItemDraft {
     required this.uom,
     required this.conversionFactor,
     required this.specification,
+    required this.remark,
   });
 
   final String itemCode;
@@ -560,6 +749,7 @@ class MaterialRequestItemDraft {
   final String uom;
   final double conversionFactor;
   final String specification;
+  final String remark;
 }
 
 class ProjectMasterDetail {
@@ -659,7 +849,12 @@ class MaterialRequestDetail {
       perReceived: _nullableDouble(
         json['per_received'] ?? json['percent_received'],
       ),
-      remark: json['custom_remark']?.toString() ?? '',
+      remark:
+          json['custom_rejection_remark']?.toString() ??
+          json['custom_rejection_reason']?.toString() ??
+          json['rejection_remark']?.toString() ??
+          json['custom_remark']?.toString() ??
+          '',
       materialAttachmentUrl:
           json['custom_add_receipt']?.toString() ??
           json['custom_material_attachment']?.toString() ??
@@ -739,6 +934,7 @@ class MaterialRequestDetailItem {
     required this.qty,
     required this.scheduleDate,
     required this.specification,
+    required this.remark,
   });
 
   final String itemCode;
@@ -747,6 +943,7 @@ class MaterialRequestDetailItem {
   final double qty;
   final String scheduleDate;
   final String specification;
+  final String remark;
 
   factory MaterialRequestDetailItem.fromJson(Map<String, dynamic> json) {
     return MaterialRequestDetailItem(
@@ -756,6 +953,7 @@ class MaterialRequestDetailItem {
       qty: _toDouble(json['qty']),
       scheduleDate: json['schedule_date']?.toString() ?? '-',
       specification: json['custom_specification']?.toString() ?? '',
+      remark: json['custom_remark']?.toString() ?? '',
     );
   }
 

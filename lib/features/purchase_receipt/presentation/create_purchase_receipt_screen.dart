@@ -262,36 +262,40 @@ class _CreatePurchaseReceiptScreenState
                           hint: context.l10n.t('tap_plus_select_pending_po'),
                           icon: Icons.receipt_long_outlined,
                         ),
-                        const SizedBox(height: 12),
-                        AppTextField(
-                          controller: _supplierDeliveryNoteController,
-                          hintText: context.l10n.t('supplier_delivery_note'),
-                          prefixIcon: Icons.local_shipping_outlined,
-                          readOnly: state.isSaved || state.isSubmitted,
-                          onChanged: controller.setSupplierDeliveryNote,
-                        ),
-                        const SizedBox(height: 18),
-                        _AttachmentRow(
-                          title: context.l10n.t('material_receipt_attachment'),
-                          attachment: state.materialAttachmentDraft,
-                          isUploading: state.isUploadingMaterial,
-                          onAttach: state.isSaved || state.isSubmitted
-                              ? null
-                              : () => _pickAttachment(
-                                  PurchaseReceiptAttachmentType.material,
-                                ),
-                        ),
-                        const SizedBox(height: 10),
-                        _AttachmentRow(
-                          title: context.l10n.t('invoice_receipt_attachment'),
-                          attachment: state.invoiceAttachmentDraft,
-                          isUploading: state.isUploadingInvoice,
-                          onAttach: state.isSaved || state.isSubmitted
-                              ? null
-                              : () => _pickAttachment(
-                                  PurchaseReceiptAttachmentType.invoice,
-                                ),
-                        ),
+                        if (state.selectedPurchaseOrder != null) ...[
+                          const SizedBox(height: 12),
+                          AppTextField(
+                            controller: _supplierDeliveryNoteController,
+                            hintText: context.l10n.t('supplier_delivery_note'),
+                            prefixIcon: Icons.local_shipping_outlined,
+                            readOnly: state.isSaved || state.isSubmitted,
+                            onChanged: controller.setSupplierDeliveryNote,
+                          ),
+                          const SizedBox(height: 18),
+                          _AttachmentRow(
+                            title: context.l10n.t(
+                              'material_receipt_attachment',
+                            ),
+                            attachment: state.materialAttachmentDraft,
+                            isUploading: state.isUploadingMaterial,
+                            onAttach: state.isSaved || state.isSubmitted
+                                ? null
+                                : () => _pickAttachment(
+                                    PurchaseReceiptAttachmentType.material,
+                                  ),
+                          ),
+                          const SizedBox(height: 10),
+                          _AttachmentRow(
+                            title: context.l10n.t('invoice_receipt_attachment'),
+                            attachment: state.invoiceAttachmentDraft,
+                            isUploading: state.isUploadingInvoice,
+                            onAttach: state.isSaved || state.isSubmitted
+                                ? null
+                                : () => _pickAttachment(
+                                    PurchaseReceiptAttachmentType.invoice,
+                                  ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -323,6 +327,10 @@ class _CreatePurchaseReceiptScreenState
                             ? null
                             : (value) =>
                                   controller.updateReceiveQty(entry.$1, value),
+                        onRemarkChanged: state.isSaved || state.isSubmitted
+                            ? null
+                            : (value) =>
+                                  controller.updateRemark(entry.$1, value),
                         onRemove: state.isSaved || state.isSubmitted
                             ? null
                             : () => controller.removeReceiptItem(entry.$1),
@@ -793,16 +801,21 @@ class _ReceiptItemCard extends StatelessWidget {
   const _ReceiptItemCard({
     required this.item,
     required this.onQtyChanged,
+    required this.onRemarkChanged,
     required this.onRemove,
     super.key,
   });
 
   final ReceiptDraftItem item;
   final ValueChanged<String>? onQtyChanged;
+  final ValueChanged<String>? onRemarkChanged;
   final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
+    final title = item.itemName.isEmpty || item.itemName == item.itemCode
+        ? item.itemCode
+        : item.itemName;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -826,7 +839,7 @@ class _ReceiptItemCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  item.itemName.isEmpty ? item.itemCode : item.itemName,
+                  title,
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 15,
@@ -840,11 +853,13 @@ class _ReceiptItemCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            item.itemCode,
-            style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
-          ),
+          if (item.itemCode.trim() != title.trim()) ...[
+            const SizedBox(height: 4),
+            Text(
+              item.itemCode,
+              style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
+            ),
+          ],
           const SizedBox(height: 12),
           Row(
             children: [
@@ -901,6 +916,17 @@ class _ReceiptItemCard extends StatelessWidget {
             decoration: InputDecoration(
               labelText: context.l10n.t('warehouse'),
               prefixIcon: const Icon(Icons.store_outlined, size: 20),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            initialValue: item.remark,
+            textInputAction: TextInputAction.done,
+            enabled: onRemarkChanged != null,
+            onChanged: onRemarkChanged,
+            decoration: InputDecoration(
+              labelText: context.l10n.t('remark'),
+              prefixIcon: const Icon(Icons.notes_outlined, size: 20),
             ),
           ),
         ],

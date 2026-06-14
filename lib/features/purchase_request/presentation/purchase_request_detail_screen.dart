@@ -42,6 +42,8 @@ class _PurchaseRequestDetailScreenState
         ? await _askRejectionRemark()
         : null;
     if (_isRejectAction(action) && rejectionRemark == null) return;
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    if (!mounted) return;
 
     try {
       await ref
@@ -65,6 +67,12 @@ class _PurchaseRequestDetailScreenState
 
   Future<String?> _askRejectionRemark() async {
     final controller = TextEditingController();
+    final l10n = context.l10n;
+    final title = l10n.t('rejection_reason');
+    final label = l10n.t('reason_remark_required');
+    final requiredMessage = l10n.message('Rejection remark is required.');
+    final cancelLabel = l10n.t('cancel');
+    final rejectLabel = l10n.t('reject');
     String? errorText;
     final result = await showDialog<String>(
       context: context,
@@ -73,7 +81,7 @@ class _PurchaseRequestDetailScreenState
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
-              title: Text(context.l10n.t('rejection_reason')),
+              title: Text(title),
               content: TextField(
                 controller: controller,
                 autofocus: true,
@@ -81,7 +89,7 @@ class _PurchaseRequestDetailScreenState
                 maxLines: 6,
                 textInputAction: TextInputAction.newline,
                 decoration: InputDecoration(
-                  labelText: context.l10n.t('reason_remark_required'),
+                  labelText: label,
                   errorText: errorText,
                   alignLabelWithHint: true,
                 ),
@@ -89,22 +97,20 @@ class _PurchaseRequestDetailScreenState
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: Text(context.l10n.t('cancel')),
+                  child: Text(cancelLabel),
                 ),
                 FilledButton(
                   onPressed: () {
                     final value = controller.text.trim();
                     if (value.isEmpty) {
                       setState(() {
-                        errorText = context.l10n.message(
-                          'Rejection remark is required.',
-                        );
+                        errorText = requiredMessage;
                       });
                       return;
                     }
                     Navigator.of(dialogContext).pop(value);
                   },
-                  child: Text(context.l10n.t('reject')),
+                  child: Text(rejectLabel),
                 ),
               ],
             );
@@ -112,6 +118,7 @@ class _PurchaseRequestDetailScreenState
         );
       },
     );
+    await Future<void>.delayed(Duration.zero);
     controller.dispose();
     return result;
   }
@@ -246,11 +253,6 @@ class _DetailContent extends StatelessWidget {
                   label: context.l10n.t('remark'),
                   value: detail.remark,
                 ),
-              if (detail.materialAttachmentUrl.isNotEmpty)
-                _InfoLine(
-                  label: context.l10n.t('material_attachment'),
-                  value: _fileNameFromUrl(detail.materialAttachmentUrl),
-                ),
               _InfoLine(
                 label: context.l10n.t('document'),
                 value: detail.docstatus == 0
@@ -265,7 +267,7 @@ class _DetailContent extends StatelessWidget {
         const SizedBox(height: 16),
         if (detail.materialAttachmentUrl.isNotEmpty) ...[
           Text(
-            context.l10n.t('material_attachment'),
+            context.l10n.t('attachment'),
             style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
           ),
           const SizedBox(height: 10),
@@ -363,54 +365,94 @@ class _MaterialAttachmentCard extends ConsumerWidget {
     final imageUrl = _absoluteFileUrl(fileUrl);
 
     return _InfoCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.attach_file, color: AppColors.primary),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  _fileNameFromUrl(fileUrl),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => _MaterialAttachmentPreview(fileUrl: fileUrl),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.attach_file, color: AppColors.primary),
+              ],
+            ),
+            if (_isImageName(fileUrl) && imageUrl != null) ...[
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: FutureBuilder<String?>(
+                  future: ref.read(secureStorageProvider).readSessionCookie(),
+                  builder: (context, snapshot) {
+                    final cookie = snapshot.data;
+                    return Image.network(
+                      imageUrl,
+                      height: 160,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      headers: cookie == null || cookie.isEmpty
+                          ? null
+                          : {'Cookie': cookie},
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        height: 96,
+                        alignment: Alignment.center,
+                        color: AppColors.background,
+                        child: Text(
+                          context.l10n.t('image_preview_unavailable'),
+                          style: const TextStyle(color: AppColors.mutedText),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ],
-          ),
-          if (_isImageName(fileUrl) && imageUrl != null) ...[
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: FutureBuilder<String?>(
-                future: ref.read(secureStorageProvider).readSessionCookie(),
-                builder: (context, snapshot) {
-                  final cookie = snapshot.data;
-                  return Image.network(
-                    imageUrl,
-                    height: 160,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    headers: cookie == null || cookie.isEmpty
-                        ? null
-                        : {'Cookie': cookie},
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      height: 96,
-                      alignment: Alignment.center,
-                      color: AppColors.background,
-                      child: Text(
-                        context.l10n.t('image_preview_unavailable'),
-                        style: const TextStyle(color: AppColors.mutedText),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
           ],
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MaterialAttachmentPreview extends ConsumerWidget {
+  const _MaterialAttachmentPreview({required this.fileUrl});
+
+  final String fileUrl;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final imageUrl = _absoluteFileUrl(fileUrl);
+
+    return Scaffold(
+      appBar: AppBar(title: Text(context.l10n.t('attachment'))),
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Center(
+          child: _isImageName(fileUrl) && imageUrl != null
+              ? FutureBuilder<String?>(
+                  future: ref.read(secureStorageProvider).readSessionCookie(),
+                  builder: (context, snapshot) {
+                    final cookie = snapshot.data;
+                    return InteractiveViewer(
+                      child: Image.network(
+                        imageUrl,
+                        fit: BoxFit.contain,
+                        headers: cookie == null || cookie.isEmpty
+                            ? null
+                            : {'Cookie': cookie},
+                        errorBuilder: (context, error, stackTrace) => Text(
+                          context.l10n.t('image_preview_unavailable'),
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    );
+                  },
+                )
+              : const Icon(Icons.attach_file, color: Colors.white, size: 64),
+        ),
       ),
     );
   }
@@ -423,22 +465,22 @@ class _ItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final title = item.itemName.isEmpty || item.itemName == item.itemCode
+        ? item.itemCode
+        : item.itemName;
     return _InfoCard(
       margin: const EdgeInsets.only(bottom: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            item.itemName.isEmpty || item.itemName == item.itemCode
-                ? item.itemCode
-                : item.itemName,
-            style: const TextStyle(fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            item.itemCode,
-            style: const TextStyle(color: AppColors.mutedText),
-          ),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+          if (item.itemCode.trim() != title.trim()) ...[
+            const SizedBox(height: 6),
+            Text(
+              item.itemCode,
+              style: const TextStyle(color: AppColors.mutedText),
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
@@ -450,7 +492,7 @@ class _ItemCard extends StatelessWidget {
               ),
               Expanded(
                 child: _InfoLine(
-                  label: context.l10n.t('date'),
+                  label: context.l10n.t('required_date'),
                   value: Formatters.dateString(item.scheduleDate),
                 ),
               ),
@@ -461,6 +503,8 @@ class _ItemCard extends StatelessWidget {
               label: context.l10n.t('specification'),
               value: item.specification,
             ),
+          if (item.remark.isNotEmpty)
+            _InfoLine(label: context.l10n.t('remark'), value: item.remark),
         ],
       ),
     );
@@ -544,15 +588,6 @@ String? _absoluteFileUrl(String fileUrl) {
   final uri = Uri.tryParse(fileUrl);
   if (uri != null && uri.hasScheme) return uri.toString();
   return ApiConfig.baseUri.resolve(fileUrl).toString();
-}
-
-String _fileNameFromUrl(String fileUrl) {
-  final uri = Uri.tryParse(fileUrl);
-  final segments = uri?.pathSegments;
-  if (segments != null && segments.isNotEmpty) {
-    return Uri.decodeComponent(segments.last);
-  }
-  return fileUrl;
 }
 
 bool _isImageName(String value) {

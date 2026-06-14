@@ -158,6 +158,7 @@ class ReceiptDraftItem {
     required this.purchaseOrderItem,
     required this.rate,
     required this.tolerancePercentage,
+    required this.remark,
   });
 
   final String itemCode;
@@ -171,6 +172,7 @@ class ReceiptDraftItem {
   final String purchaseOrderItem;
   final double rate;
   final double tolerancePercentage;
+  final String remark;
 
   double get maxAllowedReceivedQty {
     return orderedQty + (orderedQty * tolerancePercentage / 100);
@@ -181,7 +183,7 @@ class ReceiptDraftItem {
     return allowed > 0 ? allowed : 0;
   }
 
-  ReceiptDraftItem copyWith({double? receiveQty}) {
+  ReceiptDraftItem copyWith({double? receiveQty, String? remark}) {
     return ReceiptDraftItem(
       itemCode: itemCode,
       itemName: itemName,
@@ -194,6 +196,7 @@ class ReceiptDraftItem {
       purchaseOrderItem: purchaseOrderItem,
       rate: rate,
       tolerancePercentage: tolerancePercentage,
+      remark: remark ?? this.remark,
     );
   }
 
@@ -213,6 +216,7 @@ class ReceiptDraftItem {
       purchaseOrderItem: item.rowName,
       rate: item.rate,
       tolerancePercentage: toleranceRule.percentageFor(item.itemCode),
+      remark: item.remark,
     );
   }
 }
@@ -348,6 +352,13 @@ class CreatePurchaseReceiptController
     state = state.copyWith(receiptItems: nextItems, clearError: true);
   }
 
+  void updateRemark(int index, String value) {
+    final nextItems = [...state.receiptItems];
+    if (index < 0 || index >= nextItems.length) return;
+    nextItems[index] = nextItems[index].copyWith(remark: value);
+    state = state.copyWith(receiptItems: nextItems, clearError: true);
+  }
+
   void removeReceiptItem(int index) {
     if (index < 0 || index >= state.receiptItems.length) return;
     final nextItems = [...state.receiptItems]..removeAt(index);
@@ -388,6 +399,7 @@ class CreatePurchaseReceiptController
             warehouse: item.warehouse,
             purchaseOrderItem: item.purchaseOrderItem,
             rate: item.rate,
+            remark: item.remark,
           ),
         )
         .toList();

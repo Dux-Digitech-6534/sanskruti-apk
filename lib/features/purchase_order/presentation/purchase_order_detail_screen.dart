@@ -131,11 +131,13 @@ class _ItemCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-          const SizedBox(height: 6),
-          Text(
-            item.itemCode,
-            style: const TextStyle(color: AppColors.mutedText),
-          ),
+          if (item.itemCode.trim() != title.trim()) ...[
+            const SizedBox(height: 6),
+            Text(
+              item.itemCode,
+              style: const TextStyle(color: AppColors.mutedText),
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [

@@ -9,7 +9,7 @@ final purchaseOrderControllerProvider =
 
 enum PurchaseOrderStatusFilter {
   all('All'),
-  pending('Pending'),
+  pending('To Receive/Bill'),
   completed('Completed'),
   cancelled('Cancelled');
 
@@ -83,7 +83,9 @@ class PurchaseOrderState {
     return switch (statusFilter) {
       PurchaseOrderStatusFilter.all => true,
       PurchaseOrderStatusFilter.pending =>
-        status.isEmpty || !status.contains('completed'),
+        !status.contains('completed') &&
+            !status.contains('cancel') &&
+            order.docstatus != 2,
       PurchaseOrderStatusFilter.completed => status.contains('completed'),
       PurchaseOrderStatusFilter.cancelled =>
         status.contains('cancel') || order.docstatus == 2,

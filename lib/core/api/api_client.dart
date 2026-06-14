@@ -74,8 +74,7 @@ class ApiClient {
               '[ERPNext API] error: ${error.response?.data ?? error.message}',
             );
           }
-          if (error.response?.statusCode == 401 ||
-              error.response?.statusCode == 403) {
+          if (error.response?.statusCode == 401) {
             await _storage.clearSession();
           }
           handler.next(error);
@@ -174,14 +173,14 @@ class ApiClient {
     final data = error.response?.data;
     if (data is Map<String, dynamic>) {
       final message = data['message'];
-      if (message != null) return message.toString();
+      if (message != null) return _cleanMessage(message.toString());
 
       final serverMessages = data['_server_messages'];
       if (serverMessages != null) {
         return _serverMessages(serverMessages);
       }
       final exception = data['exception'] ?? data['exc'];
-      if (exception != null) return exception.toString();
+      if (exception != null) return _cleanMessage(exception.toString());
     }
 
     if (error.type == DioExceptionType.connectionTimeout ||
@@ -190,7 +189,7 @@ class ApiClient {
       return 'Connection timed out. Please check your network.';
     }
 
-    return error.message ?? 'Request failed. Please try again.';
+    return _cleanMessage(error.message ?? 'Request failed. Please try again.');
   }
 
   String _serverMessages(Object messages) {
@@ -203,12 +202,24 @@ class ApiClient {
               return item is Map ? item['message']?.toString() : null;
             })
             .whereType<String>()
+            .map(_cleanMessage)
             .join('\n');
       }
     } on Object {
-      return messages.toString();
+      return _cleanMessage(messages.toString());
     }
-    return messages.toString();
+    return _cleanMessage(messages.toString());
+  }
+
+  String _cleanMessage(String message) {
+    return message
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .trim();
   }
 
   Map<String, Object?> _redactHeaders(Map<String, dynamic> headers) {

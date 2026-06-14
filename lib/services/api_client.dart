@@ -70,21 +70,23 @@ class ApiClient {
     if (error is DioException) {
       final data = error.response?.data;
       if (data is Map && data['message'] != null) {
-        return data['message'].toString();
+        return _cleanMessage(data['message'].toString());
       }
       if (data is Map && data['_server_messages'] != null) {
         return _serverMessages(data['_server_messages']);
       }
       if (data is Map && data['exc'] != null) {
-        return data['exc'].toString();
+        return _cleanMessage(data['exc'].toString());
       }
       if (error.type == DioExceptionType.connectionTimeout ||
           error.type == DioExceptionType.receiveTimeout) {
         return 'Connection timed out. Please check network connectivity.';
       }
-      return error.message ?? 'Request failed. Please try again.';
+      return _cleanMessage(
+        error.message ?? 'Request failed. Please try again.',
+      );
     }
-    return error.toString();
+    return _cleanMessage(error.toString());
   }
 
   static String _cookieHeaderFromSetCookie(List<String> setCookie) {
@@ -112,7 +114,18 @@ class ApiClient {
         .map((match) => match.group(1))
         .whereType<String>()
         .join('\n');
-    return parsed.isNotEmpty ? parsed : value;
+    return _cleanMessage(parsed.isNotEmpty ? parsed : value);
+  }
+
+  static String _cleanMessage(String message) {
+    return message
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .trim();
   }
 }
 

@@ -47,7 +47,13 @@ class PurchaseReceiptRepository {
     final response = await _apiClient.get(
       '${ApiEndpoints.resource}/Purchase Receipt',
       queryParameters: {
-        'fields': jsonEncode(['name', 'supplier', 'posting_date', 'status']),
+        'fields': jsonEncode([
+          'name',
+          'supplier',
+          'posting_date',
+          'status',
+          'docstatus',
+        ]),
         if (filters.isNotEmpty) 'filters': jsonEncode(filters),
         if (orFilters.isNotEmpty) 'or_filters': jsonEncode(orFilters),
         'order_by': 'modified desc',
@@ -293,153 +299,27 @@ class PurchaseReceiptRepository {
         .toList();
   }
 
-  Future<List<String>> fetchPurchaseOrderNamesByItem(String itemCode) async {
-    final response = await _apiClient.get(
-      '${ApiEndpoints.resource}/Purchase Order Item',
-      queryParameters: {
-        'fields': jsonEncode(['parent']),
-        'filters': jsonEncode([
-          ['item_code', '=', itemCode],
-        ]),
-        'limit_page_length': 100,
-      },
-    );
-
-    if (kDebugMode) {
-      debugPrint(
-        '[PurchaseReceiptRepository] PO item parent list: ${response.data}',
-      );
-    }
-
-    final data = response.data is Map ? response.data['data'] : null;
-    if (data is! List) return const [];
-
-    final parentNames = data
-        .whereType<Map>()
-        .map((item) => item['parent']?.toString() ?? '')
-        .where((parent) => parent.isNotEmpty)
-        .toSet()
-        .toList();
-    if (parentNames.isNotEmpty) return parentNames;
-
-    final rowNames = data
-        .whereType<Map>()
-        .map((item) => item['name']?.toString() ?? '')
-        .where((name) => name.isNotEmpty)
-        .toSet()
-        .toList();
-
-    final fallbackParents = <String>{};
-    for (final rowName in rowNames) {
-      final parent = await _fetchPurchaseOrderItemParent(rowName);
-      if (parent != null && parent.isNotEmpty) fallbackParents.add(parent);
-    }
-    return fallbackParents.toList();
-  }
-
   Future<List<PurchaseOrderItemSelection>> fetchPurchaseOrderItemSelections({
     required String supplier,
   }) async {
     final pendingOrders = await fetchPendingPurchaseOrders(supplier: supplier);
-    final poNames = pendingOrders.map((order) => order.name).toSet();
-    if (poNames.isEmpty) return const [];
+    if (pendingOrders.isEmpty) return const [];
 
-    final response = await _apiClient.get(
-      '${ApiEndpoints.resource}/Purchase Order Item',
-      queryParameters: {
-        'fields': jsonEncode([
-          'name',
-          'parent',
-          'item_code',
-          'item_name',
-          'qty',
-          'received_qty',
-          'rate',
-        ]),
-        'filters': jsonEncode([
-          ['docstatus', '=', '1'],
-          ['parent', 'in', poNames.toList()],
-        ]),
-        'order_by': 'modified desc',
-        'limit_page_length': 500,
-      },
-    );
-
-    if (kDebugMode) {
-      debugPrint(
-        '[PurchaseReceiptRepository] PO item selection list: ${response.data}',
+    final rows = <PurchaseOrderItemSelection>[];
+    for (final order in pendingOrders) {
+      final detail = await fetchPurchaseOrderDetail(order.name);
+      rows.addAll(
+        detail.items
+            .where((item) => item.pendingQty > 0)
+            .map(
+              (item) => PurchaseOrderItemSelection.fromPurchaseOrderItem(
+                purchaseOrder: detail.name,
+                item: item,
+              ),
+            ),
       );
     }
-
-    final data = response.data is Map ? response.data['data'] : null;
-    if (data is! List) return const [];
-
-    final directRows = data
-        .whereType<Map>()
-        .map(
-          (item) => PurchaseOrderItemSelection.fromJson(
-            Map<String, dynamic>.from(item),
-          ),
-        )
-        .where(
-          (item) =>
-              item.purchaseOrder.isNotEmpty &&
-              poNames.contains(item.purchaseOrder) &&
-              item.pendingQty > 0,
-        )
-        .toList();
-    if (directRows.isNotEmpty) return directRows;
-
-    final rowNames = data
-        .whereType<Map>()
-        .map((item) => item['name']?.toString() ?? '')
-        .where((name) => name.isNotEmpty)
-        .toSet()
-        .toList();
-
-    final fallbackRows = <PurchaseOrderItemSelection>[];
-    for (final rowName in rowNames) {
-      final row = await _fetchPurchaseOrderItemSelection(rowName);
-      if (row == null) continue;
-      if (!poNames.contains(row.purchaseOrder) || row.pendingQty <= 0) continue;
-      fallbackRows.add(row);
-    }
-    return fallbackRows;
-  }
-
-  Future<String?> _fetchPurchaseOrderItemParent(String rowName) async {
-    final response = await _apiClient.get(
-      '${ApiEndpoints.resource}/Purchase Order Item/${Uri.encodeComponent(rowName)}',
-    );
-
-    if (kDebugMode) {
-      debugPrint(
-        '[PurchaseReceiptRepository] PO item detail: ${response.data}',
-      );
-    }
-
-    final data = response.data is Map ? response.data['data'] : null;
-    if (data is Map) return data['parent']?.toString();
-    return null;
-  }
-
-  Future<PurchaseOrderItemSelection?> _fetchPurchaseOrderItemSelection(
-    String rowName,
-  ) async {
-    final response = await _apiClient.get(
-      '${ApiEndpoints.resource}/Purchase Order Item/${Uri.encodeComponent(rowName)}',
-    );
-
-    if (kDebugMode) {
-      debugPrint(
-        '[PurchaseReceiptRepository] PO item selection detail: '
-        '${response.data}',
-      );
-    }
-
-    final data = response.data is Map ? response.data['data'] : null;
-    if (data is! Map) return null;
-    return PurchaseOrderItemSelection.fromJson(Map<String, dynamic>.from(data));
+    return rows;
   }
 
   Future<PurchaseOrderReceiptDetail> fetchPurchaseOrderDetail(
@@ -524,6 +404,8 @@ class PurchaseReceiptRepository {
               if (item.purchaseOrderItem.isNotEmpty)
                 'purchase_order_item': item.purchaseOrderItem,
               if (item.rate > 0) 'rate': item.rate,
+              if (item.remark.trim().isNotEmpty)
+                'custom_remark': item.remark.trim(),
             },
           )
           .toList(),
@@ -581,7 +463,7 @@ class PurchaseReceiptRepository {
     final response = await _apiClient.get(
       '${ApiEndpoints.resource}/File',
       queryParameters: {
-        'fields': jsonEncode(['file_name', 'file_url']),
+        'fields': jsonEncode(['name', 'file_name', 'file_url']),
         'filters': jsonEncode([
           ['attached_to_doctype', '=', 'Purchase Receipt'],
           ['attached_to_name', '=', name],
@@ -593,13 +475,14 @@ class PurchaseReceiptRepository {
 
     final data = response.data is Map ? response.data['data'] : null;
     if (data is! List) return const [];
-    return data
+    final attachments = data
         .whereType<Map>()
         .map(
           (item) => ReceiptAttachment.fromJson(Map<String, dynamic>.from(item)),
         )
         .where((item) => item.fileName.isNotEmpty || item.fileUrl.isNotEmpty)
         .toList();
+    return _dedupeAttachments(attachments);
   }
 
   Future<UploadedAttachment> uploadAttachment({
@@ -787,6 +670,21 @@ class PurchaseOrderItemSelection {
     );
   }
 
+  factory PurchaseOrderItemSelection.fromPurchaseOrderItem({
+    required String purchaseOrder,
+    required PurchaseOrderReceiptItem item,
+  }) {
+    return PurchaseOrderItemSelection(
+      rowName: item.rowName,
+      purchaseOrder: purchaseOrder,
+      itemCode: item.itemCode,
+      itemName: item.itemName,
+      qty: item.qty,
+      receivedQty: item.receivedQty,
+      rate: item.rate,
+    );
+  }
+
   static double _toDouble(Object? value) {
     if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '') ?? 0;
@@ -904,6 +802,7 @@ class PurchaseOrderReceiptItem {
     required this.warehouse,
     required this.rowName,
     required this.rate,
+    required this.remark,
   });
 
   final String itemCode;
@@ -914,6 +813,7 @@ class PurchaseOrderReceiptItem {
   final String warehouse;
   final String rowName;
   final double rate;
+  final String remark;
 
   double get pendingQty {
     final pending = qty - receivedQty;
@@ -930,6 +830,7 @@ class PurchaseOrderReceiptItem {
       warehouse: json['warehouse']?.toString() ?? '',
       rowName: json['name']?.toString() ?? '',
       rate: _toDouble(json['rate']),
+      remark: json['custom_remark']?.toString() ?? '',
     );
   }
 
@@ -946,6 +847,7 @@ class PurchaseReceiptSubmitItem {
     required this.warehouse,
     required this.purchaseOrderItem,
     required this.rate,
+    required this.remark,
   });
 
   final String itemCode;
@@ -953,6 +855,7 @@ class PurchaseReceiptSubmitItem {
   final String warehouse;
   final String purchaseOrderItem;
   final double rate;
+  final String remark;
 }
 
 class PurchaseReceiptDetail {
@@ -1023,6 +926,7 @@ class PurchaseReceiptDetailItem {
     required this.uom,
     required this.rate,
     required this.amount,
+    required this.remark,
   });
 
   final String itemCode;
@@ -1033,6 +937,7 @@ class PurchaseReceiptDetailItem {
   final String uom;
   final double rate;
   final double amount;
+  final String remark;
 
   factory PurchaseReceiptDetailItem.fromJson(Map<String, dynamic> json) {
     final qty = _toDouble(json['qty'] ?? json['accepted_qty']);
@@ -1050,22 +955,47 @@ class PurchaseReceiptDetailItem {
       uom: json['uom']?.toString() ?? json['stock_uom']?.toString() ?? '',
       rate: rate,
       amount: amount > 0 ? amount : qty * rate,
+      remark: json['custom_remark']?.toString() ?? '',
     );
   }
 }
 
 class ReceiptAttachment {
-  const ReceiptAttachment({required this.fileName, required this.fileUrl});
+  const ReceiptAttachment({
+    required this.fileName,
+    required this.fileUrl,
+    this.id = '',
+  });
 
   final String fileName;
   final String fileUrl;
+  final String id;
 
   factory ReceiptAttachment.fromJson(Map<String, dynamic> json) {
     return ReceiptAttachment(
+      id: json['name']?.toString() ?? '',
       fileName: json['file_name']?.toString() ?? '',
       fileUrl: json['file_url']?.toString() ?? '',
     );
   }
+}
+
+List<ReceiptAttachment> _dedupeAttachments(List<ReceiptAttachment> items) {
+  final seen = <String>{};
+  final unique = <ReceiptAttachment>[];
+  for (final item in items) {
+    final key = _attachmentKey(item);
+    if (key.isEmpty || seen.add(key)) unique.add(item);
+  }
+  return unique;
+}
+
+String _attachmentKey(ReceiptAttachment item) {
+  final url = item.fileUrl.trim().toLowerCase();
+  if (url.isNotEmpty) return url;
+  final id = item.id.trim().toLowerCase();
+  if (id.isNotEmpty) return id;
+  return item.fileName.trim().toLowerCase();
 }
 
 int _toInt(Object? value) {

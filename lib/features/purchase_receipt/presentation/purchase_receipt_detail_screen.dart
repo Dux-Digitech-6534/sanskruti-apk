@@ -197,20 +197,22 @@ class _ItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final title = item.itemName.isEmpty || item.itemName == item.itemCode
+        ? item.itemCode
+        : item.itemName;
     return _InfoCard(
       margin: const EdgeInsets.only(bottom: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            item.itemName.isEmpty ? item.itemCode : item.itemName,
-            style: const TextStyle(fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            item.itemCode,
-            style: const TextStyle(color: AppColors.mutedText),
-          ),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+          if (item.itemCode.trim() != title.trim()) ...[
+            const SizedBox(height: 6),
+            Text(
+              item.itemCode,
+              style: const TextStyle(color: AppColors.mutedText),
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
@@ -244,6 +246,8 @@ class _ItemCard extends StatelessWidget {
               ),
             ],
           ),
+          if (item.remark.isNotEmpty)
+            _InfoLine(label: context.l10n.t('remark'), value: item.remark),
         ],
       ),
     );
@@ -287,56 +291,112 @@ class _AttachmentCard extends ConsumerWidget {
 
     return _InfoCard(
       margin: const EdgeInsets.only(bottom: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.attach_file, color: AppColors.primary),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  attachment.fileName.isEmpty
-                      ? attachment.fileUrl
-                      : attachment.fileName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => _AttachmentPreview(attachment: attachment),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.attach_file, color: AppColors.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    attachment.fileName.isEmpty
+                        ? attachment.fileUrl
+                        : attachment.fileName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+            if (_looksLikeImage(attachment) && imageUrl != null) ...[
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: FutureBuilder<String?>(
+                  future: ref.read(secureStorageProvider).readSessionCookie(),
+                  builder: (context, snapshot) {
+                    final cookie = snapshot.data;
+                    return Image.network(
+                      imageUrl,
+                      height: 160,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      headers: cookie == null || cookie.isEmpty
+                          ? null
+                          : {'Cookie': cookie},
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        height: 96,
+                        alignment: Alignment.center,
+                        color: AppColors.background,
+                        child: Text(
+                          context.l10n.t('image_preview_unavailable'),
+                          style: const TextStyle(color: AppColors.mutedText),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ],
-          ),
-          if (_looksLikeImage(attachment) && imageUrl != null) ...[
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: FutureBuilder<String?>(
-                future: ref.read(secureStorageProvider).readSessionCookie(),
-                builder: (context, snapshot) {
-                  final cookie = snapshot.data;
-                  return Image.network(
-                    imageUrl,
-                    height: 160,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    headers: cookie == null || cookie.isEmpty
-                        ? null
-                        : {'Cookie': cookie},
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      height: 96,
-                      alignment: Alignment.center,
-                      color: AppColors.background,
-                      child: Text(
-                        context.l10n.t('image_preview_unavailable'),
-                        style: const TextStyle(color: AppColors.mutedText),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
           ],
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AttachmentPreview extends ConsumerWidget {
+  const _AttachmentPreview({required this.attachment});
+
+  final ReceiptAttachment attachment;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final imageUrl = _absoluteFileUrl(attachment.fileUrl);
+    final title = attachment.fileName.isEmpty
+        ? context.l10n.t('attachments')
+        : attachment.fileName;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: _looksLikeImage(attachment) && imageUrl != null
+              ? FutureBuilder<String?>(
+                  future: ref.read(secureStorageProvider).readSessionCookie(),
+                  builder: (context, snapshot) {
+                    final cookie = snapshot.data;
+                    return InteractiveViewer(
+                      child: Image.network(
+                        imageUrl,
+                        fit: BoxFit.contain,
+                        headers: cookie == null || cookie.isEmpty
+                            ? null
+                            : {'Cookie': cookie},
+                        errorBuilder: (context, error, stackTrace) => Text(
+                          context.l10n.t('image_preview_unavailable'),
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    );
+                  },
+                )
+              : const Icon(Icons.attach_file, color: Colors.white, size: 64),
+        ),
       ),
     );
   }

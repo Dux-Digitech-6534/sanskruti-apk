@@ -12,9 +12,12 @@ final purchaseRequestControllerProvider =
 
 enum PurchaseRequestStatusFilter {
   all('All'),
+  draft('Draft'),
   pending('Pending'),
   ordered('Ordered'),
-  received('Received');
+  received('Received'),
+  rejected('Rejected'),
+  cancelled('Cancelled');
 
   const PurchaseRequestStatusFilter(this.label);
 
@@ -56,12 +59,18 @@ class PurchaseRequestListState {
           if (!_matchesSearch(request)) return false;
           return switch (statusFilter) {
             PurchaseRequestStatusFilter.all => true,
+            PurchaseRequestStatusFilter.draft =>
+              MaterialRequestStatus.isDraftLike(request.displayStatus),
             PurchaseRequestStatusFilter.pending =>
               MaterialRequestStatus.isPendingLike(request.displayStatus),
             PurchaseRequestStatusFilter.ordered =>
               MaterialRequestStatus.isOrderedLike(request.displayStatus),
             PurchaseRequestStatusFilter.received =>
               MaterialRequestStatus.isReceivedLike(request.displayStatus),
+            PurchaseRequestStatusFilter.rejected =>
+              MaterialRequestStatus.isRejectedLike(request.displayStatus),
+            PurchaseRequestStatusFilter.cancelled =>
+              MaterialRequestStatus.isCancelledLike(request.displayStatus),
           };
         })
         .where(_matchesDate)

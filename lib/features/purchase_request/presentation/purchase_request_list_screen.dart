@@ -217,9 +217,12 @@ class _StatusTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     const filters = [
       PurchaseRequestStatusFilter.all,
+      PurchaseRequestStatusFilter.draft,
       PurchaseRequestStatusFilter.pending,
       PurchaseRequestStatusFilter.ordered,
       PurchaseRequestStatusFilter.received,
+      PurchaseRequestStatusFilter.rejected,
+      PurchaseRequestStatusFilter.cancelled,
     ];
 
     return SizedBox(

@@ -245,7 +245,7 @@ class _RecentRequest extends StatelessWidget {
                 ],
               ),
             ),
-            StatusBadge(label: request.status),
+            StatusBadge(label: request.displayStatus),
             const SizedBox(width: 8),
             const Icon(Icons.chevron_right, color: AppColors.mutedText),
           ],

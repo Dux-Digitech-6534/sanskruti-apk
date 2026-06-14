@@ -294,9 +294,27 @@ class _CreatePurchaseRequestScreenState
                                 ? context.l10n.message('Category is required')
                                 : null,
                           ),
+                          if (state.isLoadingSubCategories ||
+                              state.subCategories.isNotEmpty) ...[
+                            const SizedBox(height: 18),
+                            SearchableComboBox<LookupOption>(
+                              label: context.l10n.t('sub_category'),
+                              value: state.selectedSubCategory,
+                              items: state.subCategories,
+                              itemValue: (subCategory) => subCategory.id,
+                              itemLabel: (subCategory) => subCategory.label,
+                              prefixIcon: Icons.account_tree_outlined,
+                              enabled:
+                                  !state.isLoadingSubCategories &&
+                                  !state.isSubmitting,
+                              onChanged: controller.setSubCategory,
+                            ),
+                          ],
                           AnimatedSwitcher(
                             duration: const Duration(milliseconds: 180),
-                            child: state.isLoadingItems
+                            child:
+                                state.isLoadingItems ||
+                                    state.isLoadingSubCategories
                                 ? const Padding(
                                     key: ValueKey('loading-items'),
                                     padding: EdgeInsets.only(top: 14),
@@ -347,7 +365,7 @@ class _CreatePurchaseRequestScreenState
                     ),
                     const SizedBox(height: 20),
                     _SectionCard(
-                      title: context.l10n.t('material_attachment'),
+                      title: context.l10n.t('attachment'),
                       icon: Icons.image_outlined,
                       child: _AttachmentRow(
                         attachment: state.materialAttachmentDraft,
@@ -477,6 +495,7 @@ class _AddItemSheetState extends State<_AddItemSheet> {
   final _dateController = TextEditingController();
   final _qtyController = TextEditingController();
   final _specificationController = TextEditingController();
+  final _remarkController = TextEditingController();
 
   String? _itemCode;
   String? _itemLabel;
@@ -498,6 +517,7 @@ class _AddItemSheetState extends State<_AddItemSheet> {
     _dateController.dispose();
     _qtyController.dispose();
     _specificationController.dispose();
+    _remarkController.dispose();
     super.dispose();
   }
 
@@ -565,6 +585,7 @@ class _AddItemSheetState extends State<_AddItemSheet> {
         uom: _uom,
         conversionFactor: _conversionFactor,
         specification: _specificationController.text,
+        remark: _remarkController.text,
       ),
     );
   }
@@ -667,6 +688,13 @@ class _AddItemSheetState extends State<_AddItemSheet> {
                         controller: _specificationController,
                         hintText: context.l10n.t('specification'),
                         prefixIcon: Icons.description_outlined,
+                        maxLines: 3,
+                      ),
+                      const SizedBox(height: 14),
+                      AppTextField(
+                        controller: _remarkController,
+                        hintText: context.l10n.t('remark'),
+                        prefixIcon: Icons.notes_outlined,
                         maxLines: 3,
                       ),
                       const SizedBox(height: 14),
@@ -902,6 +930,13 @@ class _ItemSummaryCard extends StatelessWidget {
                   const SizedBox(height: 10),
                   Text(
                     item.specification.trim(),
+                    style: const TextStyle(color: AppColors.mutedText),
+                  ),
+                ],
+                if (item.remark.trim().isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    item.remark.trim(),
                     style: const TextStyle(color: AppColors.mutedText),
                   ),
                 ],

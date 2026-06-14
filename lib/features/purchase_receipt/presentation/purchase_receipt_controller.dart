@@ -10,8 +10,10 @@ final purchaseReceiptControllerProvider =
 
 enum PurchaseReceiptStatusFilter {
   all('All'),
+  draft('Draft'),
+  toBill('To Bill'),
   completed('Completed'),
-  toBill('To Bill');
+  cancelled('Cancelled');
 
   const PurchaseReceiptStatusFilter(this.label);
 
@@ -90,8 +92,12 @@ class PurchaseReceiptListState {
     final status = receipt.status.trim().toLowerCase();
     return switch (statusFilter) {
       PurchaseReceiptStatusFilter.all => true,
-      PurchaseReceiptStatusFilter.completed => status.contains('completed'),
+      PurchaseReceiptStatusFilter.draft =>
+        receipt.docstatus == 0 || status.contains('draft'),
       PurchaseReceiptStatusFilter.toBill => status.contains('to bill'),
+      PurchaseReceiptStatusFilter.completed => status.contains('completed'),
+      PurchaseReceiptStatusFilter.cancelled =>
+        receipt.docstatus == 2 || status.contains('cancelled'),
     };
   }
 

@@ -13,18 +13,21 @@ class CreatePurchaseRequestState {
   const CreatePurchaseRequestState({
     this.projects = const [],
     this.categories = const [],
+    this.subCategories = const [],
     this.warehouses = const [],
     this.filteredItems = const [],
     this.items = const [],
     this.materialAttachmentDraft,
     this.selectedProject,
     this.selectedCategory,
+    this.selectedSubCategory,
     this.scheduleDate,
     this.priority = 'Medium',
     this.remark = '',
     this.autoWarehouse = '',
     this.isLoading = false,
     this.isLoadingProject = false,
+    this.isLoadingSubCategories = false,
     this.isLoadingItems = false,
     this.isUploadingAttachment = false,
     this.isSubmitting = false,
@@ -40,18 +43,21 @@ class CreatePurchaseRequestState {
 
   final List<LookupOption> projects;
   final List<LookupOption> categories;
+  final List<LookupOption> subCategories;
   final List<LookupOption> warehouses;
   final List<ItemLookupOption> filteredItems;
   final List<CreatePurchaseRequestItemDraft> items;
   final MaterialRequestAttachmentDraft? materialAttachmentDraft;
   final String? selectedProject;
   final String? selectedCategory;
+  final String? selectedSubCategory;
   final DateTime? scheduleDate;
   final String priority;
   final String remark;
   final String autoWarehouse;
   final bool isLoading;
   final bool isLoadingProject;
+  final bool isLoadingSubCategories;
   final bool isLoadingItems;
   final bool isUploadingAttachment;
   final bool isSubmitting;
@@ -60,30 +66,35 @@ class CreatePurchaseRequestState {
   CreatePurchaseRequestState copyWith({
     List<LookupOption>? projects,
     List<LookupOption>? categories,
+    List<LookupOption>? subCategories,
     List<LookupOption>? warehouses,
     List<ItemLookupOption>? filteredItems,
     List<CreatePurchaseRequestItemDraft>? items,
     MaterialRequestAttachmentDraft? materialAttachmentDraft,
     String? selectedProject,
     String? selectedCategory,
+    String? selectedSubCategory,
     DateTime? scheduleDate,
     String? priority,
     String? remark,
     String? autoWarehouse,
     bool? isLoading,
     bool? isLoadingProject,
+    bool? isLoadingSubCategories,
     bool? isLoadingItems,
     bool? isUploadingAttachment,
     bool? isSubmitting,
     String? errorMessage,
     bool clearProject = false,
     bool clearCategory = false,
+    bool clearSubCategory = false,
     bool clearMaterialAttachment = false,
     bool clearError = false,
   }) {
     return CreatePurchaseRequestState(
       projects: projects ?? this.projects,
       categories: categories ?? this.categories,
+      subCategories: subCategories ?? this.subCategories,
       warehouses: warehouses ?? this.warehouses,
       filteredItems: filteredItems ?? this.filteredItems,
       items: items ?? this.items,
@@ -96,12 +107,17 @@ class CreatePurchaseRequestState {
       selectedCategory: clearCategory
           ? null
           : selectedCategory ?? this.selectedCategory,
+      selectedSubCategory: clearSubCategory
+          ? null
+          : selectedSubCategory ?? this.selectedSubCategory,
       scheduleDate: scheduleDate ?? this.scheduleDate,
       priority: priority ?? this.priority,
       remark: remark ?? this.remark,
       autoWarehouse: autoWarehouse ?? this.autoWarehouse,
       isLoading: isLoading ?? this.isLoading,
       isLoadingProject: isLoadingProject ?? this.isLoadingProject,
+      isLoadingSubCategories:
+          isLoadingSubCategories ?? this.isLoadingSubCategories,
       isLoadingItems: isLoadingItems ?? this.isLoadingItems,
       isUploadingAttachment:
           isUploadingAttachment ?? this.isUploadingAttachment,
@@ -130,6 +146,7 @@ class CreatePurchaseRequestItemDraft {
     required this.uom,
     required this.conversionFactor,
     required this.specification,
+    required this.remark,
   });
 
   final String itemCode;
@@ -139,6 +156,7 @@ class CreatePurchaseRequestItemDraft {
   final String uom;
   final double conversionFactor;
   final String specification;
+  final String remark;
 }
 
 class CreatePurchaseRequestController
@@ -219,16 +237,54 @@ class CreatePurchaseRequestController
   Future<void> setCategory(String? value) async {
     state = state.copyWith(
       selectedCategory: value,
+      subCategories: const [],
       filteredItems: const [],
       items: const [],
+      isLoadingSubCategories: value != null,
       isLoadingItems: value != null,
       clearCategory: value == null,
+      clearSubCategory: true,
       clearError: true,
     );
     if (value == null || value.isEmpty) return;
 
     try {
+      final subCategories = await _repository.fetchSubCategories(
+        category: value,
+      );
       final items = await _repository.fetchItemsByCategory(category: value);
+      state = state.copyWith(
+        subCategories: subCategories,
+        filteredItems: items,
+        isLoadingSubCategories: false,
+        isLoadingItems: false,
+      );
+    } on Object catch (error) {
+      state = state.copyWith(
+        isLoadingSubCategories: false,
+        isLoadingItems: false,
+        errorMessage: _friendlyError(error),
+      );
+    }
+  }
+
+  Future<void> setSubCategory(String? value) async {
+    final category = state.selectedCategory;
+    state = state.copyWith(
+      selectedSubCategory: value,
+      filteredItems: const [],
+      items: const [],
+      isLoadingItems: category != null,
+      clearSubCategory: value == null,
+      clearError: true,
+    );
+    if (category == null || category.isEmpty) return;
+
+    try {
+      final items = await _repository.fetchItemsByCategory(
+        category: category,
+        subCategory: value,
+      );
       state = state.copyWith(filteredItems: items, isLoadingItems: false);
     } on Object catch (error) {
       state = state.copyWith(
@@ -278,6 +334,7 @@ class CreatePurchaseRequestController
         project: state.selectedProject!,
         warehouse: state.autoWarehouse,
         category: state.selectedCategory!,
+        subCategory: state.selectedSubCategory,
         scheduleDate: state.scheduleDate!,
         priority: state.priority,
         remark: state.remark,
@@ -290,6 +347,7 @@ class CreatePurchaseRequestController
                 uom: item.uom,
                 conversionFactor: item.conversionFactor,
                 specification: item.specification,
+                remark: item.remark,
               ),
             )
             .toList(),
