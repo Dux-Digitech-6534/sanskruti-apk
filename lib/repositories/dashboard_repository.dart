@@ -25,6 +25,9 @@ class DashboardRepository {
   final ApiClient _apiClient;
 
   Future<DashboardData> fetchDashboardData() async {
+    final materialRequests = await _fetchPagedSummaries(
+      doctype: 'Material Request',
+    );
     final pendingMaterialRequests = await _fetchPagedSummaries(
       doctype: 'Material Request',
       filters: const [
@@ -41,6 +44,7 @@ class DashboardRepository {
     final recentReceipts = await fetchRecentPurchaseReceipts();
 
     return DashboardData(
+      totalMaterialRequestsCount: materialRequests.length,
       pendingRequestsCount: pendingMaterialRequests
           .where(
             (request) =>

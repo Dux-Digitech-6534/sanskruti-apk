@@ -154,9 +154,7 @@ class _HeaderCard extends StatelessWidget {
                   ),
                 ),
               ),
-              StatusBadge(
-                label: receipt.isSubmitted ? 'Submitted' : receipt.status,
-              ),
+              StatusBadge(label: receipt.displayStatus),
             ],
           ),
           const SizedBox(height: 14),

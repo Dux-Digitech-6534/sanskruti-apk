@@ -22,7 +22,7 @@ class UserProfile {
           json['name']?.toString() ??
           'Sanskruti User',
       email: json['email']?.toString() ?? json['user']?.toString() ?? '',
-      role: json['role']?.toString(),
+      role: json['role']?.toString() ?? json['user_type']?.toString(),
       site: json['site']?.toString(),
     );
   }

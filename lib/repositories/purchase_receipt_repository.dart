@@ -883,6 +883,17 @@ class PurchaseReceiptDetail {
 
   bool get isDraft => docstatus == 0;
   bool get isSubmitted => docstatus == 1;
+  String get displayStatus {
+    final normalized = status.trim();
+    final lower = normalized.toLowerCase();
+    if (docstatus == 0) return 'Draft';
+    if (docstatus == 2 || lower.contains('cancel')) return 'Cancelled';
+    if (docstatus == 1 && (normalized.isEmpty || lower == 'submitted')) {
+      return 'Completed';
+    }
+    return normalized.isEmpty ? _docStatusLabel(docstatus) : normalized;
+  }
+
   double get totalAmount =>
       items.fold<double>(0, (sum, item) => sum + item.amount);
 

@@ -44,8 +44,10 @@ class ProfileScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(user?.email ?? user?.id ?? ''),
-                const SizedBox(height: 8),
-                Text(context.l10n.role(user?.role ?? 'ERP User')),
+                if (user?.role?.trim().isNotEmpty == true) ...[
+                  const SizedBox(height: 8),
+                  Text(context.l10n.role(user!.role!.trim())),
+                ],
               ],
             ),
           ),

@@ -86,10 +86,10 @@ class _DashboardContent extends StatelessWidget {
             children: [
               Expanded(
                 child: DashboardCard(
-                  title: context.l10n.t('pending_requests'),
-                  value: data.pendingRequestsCount.toString(),
+                  title: context.l10n.t('total_material_request'),
+                  value: data.totalMaterialRequestsCount.toString(),
                   icon: Icons.assignment_outlined,
-                  onTap: () => context.push('/purchase-request?status=pending'),
+                  onTap: () => context.push('/purchase-request'),
                 ),
               ),
               const SizedBox(width: 12),
@@ -99,7 +99,7 @@ class _DashboardContent extends StatelessWidget {
                   value: data.pendingPurchaseOrdersCount.toString(),
                   icon: Icons.description_outlined,
                   tint: AppColors.warning,
-                  onTap: () => context.push('/purchase-request?status=pending'),
+                  onTap: () => context.push('/purchase-order?status=pending'),
                 ),
               ),
             ],

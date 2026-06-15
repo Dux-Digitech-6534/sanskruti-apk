@@ -3,6 +3,7 @@ import 'purchase_receipt.dart';
 
 class DashboardData {
   const DashboardData({
+    required this.totalMaterialRequestsCount,
     required this.pendingRequestsCount,
     required this.pendingPurchaseOrdersCount,
     required this.recentRequests,
@@ -10,6 +11,7 @@ class DashboardData {
     this.siteName,
   });
 
+  final int totalMaterialRequestsCount;
   final int pendingRequestsCount;
   final int pendingPurchaseOrdersCount;
   final List<PurchaseRequestSummary> recentRequests;
@@ -19,6 +21,7 @@ class DashboardData {
   factory DashboardData.empty() {
     return const DashboardData(
       pendingRequestsCount: 0,
+      totalMaterialRequestsCount: 0,
       pendingPurchaseOrdersCount: 0,
       recentRequests: [],
       recentReceipts: [],
@@ -31,6 +34,11 @@ class DashboardData {
     return DashboardData(
       pendingRequestsCount:
           int.tryParse(json['pending_requests_count']?.toString() ?? '') ?? 0,
+      totalMaterialRequestsCount:
+          int.tryParse(
+            json['total_material_requests_count']?.toString() ?? '',
+          ) ??
+          0,
       pendingPurchaseOrdersCount:
           int.tryParse(
             json['pending_purchase_orders_count']?.toString() ?? '',
