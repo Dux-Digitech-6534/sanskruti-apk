@@ -95,11 +95,11 @@ class _DashboardContent extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: DashboardCard(
-                  title: context.l10n.t('pending_po'),
+                  title: context.l10n.t('pending_po_approval'),
                   value: data.pendingPurchaseOrdersCount.toString(),
                   icon: Icons.description_outlined,
                   tint: AppColors.warning,
-                  onTap: () => context.push('/purchase-order?status=pending'),
+                  onTap: () => context.push('/purchase-request?status=pending'),
                 ),
               ),
             ],
@@ -138,10 +138,7 @@ class _DashboardContent extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          SectionHeader(
-            title: context.l10n.t('recent_requests'),
-            actionLabel: context.l10n.t('view_all'),
-          ),
+          SectionHeader(title: context.l10n.t('recent_requests')),
           const SizedBox(height: 10),
           if (data.recentRequests.isEmpty)
             const _EmptyRecentRequests()
@@ -155,10 +152,7 @@ class _DashboardContent extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 20),
-          SectionHeader(
-            title: context.l10n.t('recent_receipts'),
-            actionLabel: context.l10n.t('view_all'),
-          ),
+          SectionHeader(title: context.l10n.t('recent_receipts')),
           const SizedBox(height: 10),
           if (data.recentReceipts.isEmpty)
             const _EmptyRecentReceipts()

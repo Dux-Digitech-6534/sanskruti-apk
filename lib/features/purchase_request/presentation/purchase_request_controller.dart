@@ -12,7 +12,7 @@ final purchaseRequestControllerProvider =
 
 enum PurchaseRequestStatusFilter {
   all('All'),
-  draft('Draft'),
+  draft('Pending Approval'),
   pending('Pending'),
   ordered('Ordered'),
   received('Received'),

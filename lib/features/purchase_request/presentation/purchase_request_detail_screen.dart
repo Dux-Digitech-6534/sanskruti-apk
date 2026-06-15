@@ -244,23 +244,11 @@ class _DetailContent extends StatelessWidget {
                 label: context.l10n.t('priority'),
                 value: detail.priority,
               ),
-              _InfoLine(
-                label: context.l10n.t('workflow_state'),
-                value: detail.displayWorkflowState,
-              ),
               if (detail.remark.isNotEmpty)
                 _InfoLine(
                   label: context.l10n.t('remark'),
                   value: detail.remark,
                 ),
-              _InfoLine(
-                label: context.l10n.t('document'),
-                value: detail.docstatus == 0
-                    ? context.l10n.t('draft')
-                    : detail.docstatus == 1
-                    ? context.l10n.t('submitted')
-                    : context.l10n.t('cancelled'),
-              ),
             ],
           ),
         ),

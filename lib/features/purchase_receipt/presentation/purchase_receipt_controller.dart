@@ -11,7 +11,6 @@ final purchaseReceiptControllerProvider =
 enum PurchaseReceiptStatusFilter {
   all('All'),
   draft('Draft'),
-  toBill('To Bill'),
   completed('Completed'),
   cancelled('Cancelled');
 
@@ -94,7 +93,6 @@ class PurchaseReceiptListState {
       PurchaseReceiptStatusFilter.all => true,
       PurchaseReceiptStatusFilter.draft =>
         receipt.docstatus == 0 || status.contains('draft'),
-      PurchaseReceiptStatusFilter.toBill => status.contains('to bill'),
       PurchaseReceiptStatusFilter.completed => status.contains('completed'),
       PurchaseReceiptStatusFilter.cancelled =>
         receipt.docstatus == 2 || status.contains('cancelled'),

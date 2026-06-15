@@ -176,14 +176,6 @@ class _HeaderCard extends StatelessWidget {
               receipt.grandTotal > 0 ? receipt.grandTotal : receipt.totalAmount,
             ),
           ),
-          _InfoLine(
-            label: context.l10n.t('document'),
-            value: receipt.isSubmitted
-                ? context.l10n.t('submitted')
-                : receipt.isDraft
-                ? context.l10n.t('draft')
-                : context.l10n.t('cancelled'),
-          ),
         ],
       ),
     );

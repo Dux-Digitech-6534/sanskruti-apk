@@ -46,17 +46,13 @@ class MaterialRequestStatus {
 
   static bool isPendingLike(String value) {
     final lower = value.trim().toLowerCase();
-    return _containsAny(lower, const [
-      'pending',
-      'approval',
-      'open',
-      'submitted',
-    ]);
+    if (lower.contains('approval') || lower == 'draft') return false;
+    return _containsAny(lower, const ['pending', 'open', 'submitted']);
   }
 
   static bool isDraftLike(String value) {
     final lower = value.trim().toLowerCase();
-    return lower == 'draft';
+    return lower == 'draft' || lower.contains('approval');
   }
 
   static bool isOrderedLike(String value) {
