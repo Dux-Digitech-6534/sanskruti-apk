@@ -1,0 +1,20 @@
+<!-- @dsCard group="Brand" viewport="700x200" name="Mascot" subtitle="The DUX mascot — empty states, thinking/working moments, onboarding" -->
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; font-family: var(--font-ui); display: flex; }
+  .panel { flex: 1; padding: 24px; display: flex; align-items: center; justify-content: center; gap: 28px; min-height: 168px; }
+  .light { background: #F3F4F7; }
+  .dark { background: #0A0D13; }
+  .panel img { height: 96px; filter: drop-shadow(0 12px 28px rgba(20,28,46,.22)); }
+  .panel img.sm { height: 48px; }
+  .glow { position: relative; display: grid; place-items: center; }
+  .glow::before { content:""; position: absolute; width: 150px; height: 150px; border-radius: 50%; background: radial-gradient(circle, rgba(92,77,230,.18), rgba(45,212,191,.05) 45%, transparent 68%); }
+  .dark .glow::before { background: radial-gradient(circle, rgba(109,94,246,.22), rgba(45,212,191,.07) 45%, transparent 68%); }
+</style></head>
+<body>
+  <div class="panel light"><div class="glow"><img src="../assets/dux-mascot.png" alt="DUX mascot" /></div><img class="sm" src="../assets/dux-mascot.png" alt="DUX mascot" /></div>
+  <div class="panel dark"><div class="glow"><img src="../assets/dux-mascot.png" alt="DUX mascot" /></div><img class="sm" src="../assets/dux-mascot.png" alt="DUX mascot" /></div>
+</body>
+</html>

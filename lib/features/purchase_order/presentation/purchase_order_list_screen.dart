@@ -1,0 +1,372 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../core/constants/app_constants.dart';
+import '../../../core/widgets/app_drawer.dart';
+import '../../../core/widgets/app_text_field.dart';
+import '../../../core/widgets/blueprint_background.dart';
+import '../../../core/widgets/custom_app_bar.dart';
+import '../../../core/widgets/dashboard_card.dart';
+import '../../../core/widgets/list_filter_button.dart';
+import '../../../core/widgets/status_badge.dart';
+import '../../../core/utils/formatters.dart';
+import '../../../l10n/app_localizations.dart';
+import '../../../repositories/purchase_order_repository.dart';
+import 'purchase_order_controller.dart';
+
+class PurchaseOrderListScreen extends ConsumerStatefulWidget {
+  const PurchaseOrderListScreen({this.initialPendingOnly = false, super.key});
+
+  final bool initialPendingOnly;
+
+  @override
+  ConsumerState<PurchaseOrderListScreen> createState() =>
+      _PurchaseOrderListScreenState();
+}
+
+class _PurchaseOrderListScreenState
+    extends ConsumerState<PurchaseOrderListScreen> {
+  final _searchController = TextEditingController();
+  Timer? _searchDebounce;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() async {
+      final controller = ref.read(purchaseOrderControllerProvider.notifier);
+      _searchController.clear();
+      controller.setStatusFilter(PurchaseOrderStatusFilter.draftPending);
+      await controller.clearSearchAndRefresh();
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 450), () {
+      ref.read(purchaseOrderControllerProvider.notifier).setSearch(value);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(purchaseOrderControllerProvider);
+    final controller = ref.read(purchaseOrderControllerProvider.notifier);
+    final visibleItems = state.visibleItems;
+
+    return Scaffold(
+      drawer: const AppDrawer(),
+      appBar: CustomAppBar(
+        title: context.l10n.t('purchase_orders'),
+        showMenuButton: true,
+      ),
+      body: BlueprintBackground(
+        child: RefreshIndicator(
+          onRefresh: controller.load,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: DashboardCard(
+                      title: context.l10n.t('loaded_po'),
+                      value: visibleItems.length.toString(),
+                      icon: Icons.description_outlined,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: DashboardCard(
+                      title: context.l10n.t('filtered'),
+                      value: visibleItems.length.toString(),
+                      icon: Icons.filter_alt_outlined,
+                      tint: AppColors.secondary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: AppTextField(
+                      controller: _searchController,
+                      hintText: context.l10n.t('search_purchase_orders'),
+                      prefixIcon: Icons.search,
+                      textInputAction: TextInputAction.search,
+                      onChanged: _onSearchChanged,
+                      onFieldSubmitted: controller.setSearch,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: ListFilterButton(
+                      label: context.l10n.t('order_date'),
+                      fromDate: state.fromDate,
+                      toDate: state.toDate,
+                      onChanged: controller.setDateFilter,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              _DraftPendingFilter(count: visibleItems.length),
+              const SizedBox(height: 8),
+              const Padding(
+                padding: EdgeInsets.only(left: 4),
+                child: Text(
+                  'Showing Draft and Pending purchase orders',
+                  style: TextStyle(
+                    color: AppColors.mutedText,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (state.isLoading)
+                const Padding(
+                  padding: EdgeInsets.only(top: 100),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (state.errorMessage != null)
+                _MessageState(
+                  message: state.errorMessage!,
+                  onRetry: controller.load,
+                )
+              else if (visibleItems.isEmpty)
+                _MessageState(
+                  message: context.l10n.t('no_purchase_orders_found'),
+                  onRetry: controller.load,
+                )
+              else
+                ...visibleItems.map(
+                  (order) => _PurchaseOrderCard(
+                    order,
+                    onTap: () async {
+                      await context.push(
+                        '/purchase-order-detail/${Uri.encodeComponent(order.name)}',
+                      );
+                      if (!context.mounted) return;
+                      _searchController.clear();
+                      await ref
+                          .read(purchaseOrderControllerProvider.notifier)
+                          .clearSearchAndRefresh();
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DraftPendingFilter extends StatelessWidget {
+  const _DraftPendingFilter({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [AppColors.primary, AppColors.primaryDark],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: .20),
+            offset: const Offset(0, 12),
+            blurRadius: 26,
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.accent),
+            ),
+            child: const Icon(Icons.filter_alt_outlined, color: Colors.white),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Text(
+              'Draft / Pending',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.accent,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              count.toString(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PurchaseOrderCard extends StatelessWidget {
+  const _PurchaseOrderCard(this.order, {required this.onTap});
+
+  final PurchaseOrderSummary order;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final displayStatus = _poDisplayStatus(order);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.border),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: .05),
+              offset: const Offset(0, 12),
+              blurRadius: 24,
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: .08),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: const Icon(
+                Icons.assignment_outlined,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    order.name,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${context.l10n.t('supplier')}: ${order.supplier}',
+                    style: const TextStyle(color: AppColors.mutedText),
+                  ),
+                  const SizedBox(height: 5),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 4,
+                    children: [
+                      _MetaText(
+                        icon: Icons.calendar_today_outlined,
+                        value: Formatters.dateString(order.transactionDate),
+                      ),
+                      if (order.grandTotal > 0)
+                        _MetaText(
+                          icon: Icons.currency_rupee,
+                          value: Formatters.currency(order.grandTotal),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            StatusBadge(label: displayStatus),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right, color: AppColors.mutedText),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MetaText extends StatelessWidget {
+  const _MetaText({required this.icon, required this.value});
+
+  final IconData icon;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 15, color: AppColors.mutedText),
+        const SizedBox(width: 5),
+        Text(value, style: const TextStyle(color: AppColors.mutedText)),
+      ],
+    );
+  }
+}
+
+String _poDisplayStatus(PurchaseOrderSummary order) {
+  final status = order.status.trim().toLowerCase();
+  if (order.docstatus == 0 || status.contains('draft')) return 'Draft';
+  return 'Pending';
+}
+
+class _MessageState extends StatelessWidget {
+  const _MessageState({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 100),
+      child: Column(
+        children: [
+          Text(context.l10n.message(message), textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          TextButton(onPressed: onRetry, child: Text(context.l10n.t('retry'))),
+        ],
+      ),
+    );
+  }
+}

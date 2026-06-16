@@ -1,0 +1,17 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Status colors" subtitle="OK / pending / error — text + tint pairs" -->
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head><meta charset="UTF-8" /><link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; font-family: var(--font-ui); background: var(--bg-app); padding: 22px; display: flex; gap: 14px; }
+  .st { flex: 1; border-radius: var(--r-md); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .dot { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: var(--fw-semibold); }
+  .dot i { width: 9px; height: 9px; border-radius: 50%; }
+  .hex { font-family: var(--font-mono); font-size: 11px; }
+</style></head>
+<body>
+  <div class="st" style="background:var(--ok-bg)"><span class="dot" style="color:var(--ok)"><i style="background:var(--ok)"></i> Approved · Paid</span><span class="hex" style="color:var(--ok)">--ok #15916A</span></div>
+  <div class="st" style="background:var(--pending-bg)"><span class="dot" style="color:var(--pending)"><i style="background:var(--pending)"></i> Pending · To Receive</span><span class="hex" style="color:var(--pending)">--pending #B0741A</span></div>
+  <div class="st" style="background:var(--err-bg)"><span class="dot" style="color:var(--err)"><i style="background:var(--err)"></i> Error · Cancelled</span><span class="hex" style="color:var(--err)">--err #C8475E</span></div>
+</body>
+</html>

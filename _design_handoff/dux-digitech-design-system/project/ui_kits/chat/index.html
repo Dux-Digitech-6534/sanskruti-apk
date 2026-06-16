@@ -1,0 +1,246 @@
+<!-- @dsCard group="DUX Assistant" viewport="1280x800" name="Chat — empty state" subtitle="The DUX Assistant surface: ask-bar, examples, transparent results" -->
+<!-- @startingPoint section="DUX Assistant" subtitle="Plain-English ERP query chat with transparent filter pills" viewport="1280x800" -->
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DUX Assistant</title>
+<link rel="stylesheet" href="../../styles.css" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font-family: var(--font-ui); background: var(--bg-app); color: var(--text-primary); -webkit-font-smoothing: antialiased; }
+  #root { height: 100%; }
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--scrollthumb); border-radius: 999px; border: 3px solid var(--canvas); }
+
+  .turn { animation: duxSettle .5s var(--spring) both; }
+  @keyframes duxSettle { from { transform: translateY(12px); } to { transform: none; } }
+  @keyframes duxBob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+  @keyframes duxFloaty { 0%,100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-8px) rotate(1deg); } }
+  .shim { background: linear-gradient(90deg, var(--fg-3) 30%, var(--fg-1) 50%, var(--fg-3) 70%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: duxShim 2.2s linear infinite; }
+  @keyframes duxShim { to { background-position: -200% 0; } }
+  .ex:hover { border-color: var(--iris) !important; transform: translateX(3px); }
+  .btn-new:hover { border-color: var(--iris); color: var(--iris); background: var(--surface-3); }
+  @media (prefers-reduced-motion: reduce) { .turn, .shim, .mascot-float, .mascot-bob { animation: none !important; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- demo dataset + helpers (plain JS, inline so the DS compiler does not bundle it) -->
+<script>
+(function () {
+  const inr = (n) => { try { return Number(n).toLocaleString('en-IN'); } catch (e) { return String(n); } };
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fmtDate = (v) => { const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${(+m[3])} ${MONTHS[+m[2]-1]} ${m[1]}` : v; };
+  const PO = [
+    { name: 'PUR-ORD-2026-00184', supplier: 'Bhandari Hardware', company: 'Dux Digitech', grand_total: 184500, status: 'To Receive and Bill', transaction_date: '2026-03-14' },
+    { name: 'PUR-ORD-2026-00179', supplier: 'Jain Engineering',  company: 'Dux Digitech', grand_total: 96200,  status: 'To Receive and Bill', transaction_date: '2026-03-12' },
+    { name: 'PUR-ORD-2026-00171', supplier: 'Bhandari Hardware', company: 'Dux Digitech', grand_total: 42800,  status: 'To Bill',            transaction_date: '2026-03-09' },
+    { name: 'PUR-ORD-2026-00168', supplier: 'Surya Steels',      company: 'Dux Retail',   grand_total: 312000, status: 'Completed',          transaction_date: '2026-03-05' },
+    { name: 'PUR-ORD-2026-00160', supplier: 'Bhandari Hardware', company: 'Dux Digitech', grand_total: 28750,  status: 'Draft',              transaction_date: '2026-03-02' },
+    { name: 'PUR-ORD-2026-00152', supplier: 'Meghdoot Traders',  company: 'Dux Retail',   grand_total: 67400,  status: 'To Receive and Bill', transaction_date: '2026-02-26' },
+    { name: 'PUR-ORD-2026-00147', supplier: 'Jain Engineering',  company: 'Dux Digitech', grand_total: 153900, status: 'Completed',          transaction_date: '2026-02-21' },
+  ];
+  const FIELDS = ['name', 'supplier', 'company', 'grand_total', 'status', 'transaction_date'];
+  function query(q) {
+    const s = q.toLowerCase();
+    let rows = PO.slice(); let filters = [];
+    if (/pending|to receive|to bill|open/.test(s)) { rows = rows.filter(r => /to receive|to bill/i.test(r.status)); filters.push({ icon: 'clock', label: 'Status', value: 'Pending', tint: 'pending' }); }
+    if (/bhandari/.test(s)) { rows = rows.filter(r => /bhandari/i.test(r.supplier)); filters.push({ icon: 'truck', label: 'Supplier', value: 'Bhandari', tint: 'iris' }); }
+    if (/jain/.test(s)) { rows = rows.filter(r => /jain/i.test(r.supplier)); filters.push({ icon: 'truck', label: 'Supplier', value: 'Jain Engineering', tint: 'iris' }); }
+    const mUnder = s.match(/(?:under|below|less than)\s*₹?\s*([\d,]+)/);
+    const mOver = s.match(/(?:above|over|more than|greater than)\s*₹?\s*([\d,]+)/);
+    if (mUnder) { const n = +mUnder[1].replace(/,/g,''); rows = rows.filter(r => r.grand_total < n); filters.push({ icon: 'rupee', label: 'Amount', value: '< ₹' + inr(n), tint: 'cyan', num: true }); }
+    if (mOver)  { const n = +mOver[1].replace(/,/g,'');  rows = rows.filter(r => r.grand_total > n); filters.push({ icon: 'rupee', label: 'Amount', value: '> ₹' + inr(n), tint: 'cyan', num: true }); }
+    if (!filters.length) filters.push({ icon: 'box', label: 'Type', value: 'Purchase Order', tint: 'iris' });
+    return { doctype: 'Purchase Order', fields: FIELDS, filters, rows };
+  }
+  window.DUXDemo = { PO, FIELDS, query, inr, fmtDate };
+})();
+</script>
+
+<!-- DUX Assistant app (inline babel; composes DS bundle primitives) -->
+<script type="text/babel">
+const DUX = window.DUXDigitechDesignSystem_a3a609;
+const { Icon, BrandAvatar, IconButton, Composer, FilterPill, FilterBar, StatusTag } = DUX;
+const D = window.DUXDemo;
+const MARK_L = '../../assets/dux-mark.png';
+const MARK_W = '../../assets/dux-mark-white.png';
+const MASCOT = '../../assets/dux-mascot.png';
+const nowTime = () => new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+function DataTable({ fields, rows }) {
+  const isAmt = (f) => /total|amount|grand/.test(f);
+  const head = { name: 'Purchase Order', supplier: 'Supplier', company: 'Company', grand_total: 'Grand Total', status: 'Status', transaction_date: 'Date' };
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <thead><tr>
+          {fields.map(f => (
+            <th key={f} style={{ textAlign: isAmt(f) ? 'right' : 'left', fontWeight: 600, fontSize: 10.5, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--text-muted)', padding: '11px 16px', borderBottom: '1px solid var(--border-subtle)', whiteSpace: 'nowrap', background: 'var(--th-bg)' }}>{head[f] || f}</th>
+          ))}
+        </tr></thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} style={{ transition: 'background .18s var(--ease)' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--row-hover)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              {fields.map(f => <Cell key={f} field={f} value={r[f]} />)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+function Cell({ field, value }) {
+  const td = { padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-primary)', verticalAlign: 'middle' };
+  if (field === 'name') return <td style={{ ...td, fontFamily: 'var(--font-mono)', color: 'var(--cyan)', fontWeight: 600, whiteSpace: 'nowrap', cursor: 'pointer' }}>{value}</td>;
+  if (field === 'status') return <td style={td}><StatusTag label={value} /></td>;
+  if (/total|amount|grand/.test(field)) return <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', fontWeight: 500, whiteSpace: 'nowrap' }}><span style={{ color: 'var(--text-muted)', marginRight: 1 }}>₹</span>{D.inr(value)}</td>;
+  if (field === 'transaction_date') return <td style={{ ...td, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontSize: 12.5, whiteSpace: 'nowrap' }}>{D.fmtDate(value)}</td>;
+  if (field === 'company') return <td style={{ ...td, color: 'var(--text-secondary)' }}>{value}</td>;
+  return <td style={td}>{value}</td>;
+}
+const Num = ({ children }) => <span style={{ color: 'var(--cyan)', fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{children}</span>;
+const tsStyle = { fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--text-faint)', letterSpacing: '.02em', userSelect: 'none' };
+
+function UserTurn({ text }) {
+  return (
+    <div className="turn" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
+      <div style={{ maxWidth: 640, background: 'var(--user-bg)', border: '1px solid var(--user-border)', color: 'var(--user-fg)', padding: '12px 16px', borderRadius: '16px 16px 5px 16px', fontSize: 14.5, lineHeight: 1.55, boxShadow: 'var(--inset-hi)', whiteSpace: 'pre-wrap' }}>{text}</div>
+      <div style={tsStyle}>{nowTime()}</div>
+    </div>
+  );
+}
+function AssistantTurn({ result }) {
+  const sum = result.rows.reduce((a, r) => a + r.grand_total, 0);
+  const count = result.rows.length;
+  return (
+    <div className="turn" style={{ display: 'flex', gap: 13, alignItems: 'flex-start' }}>
+      <BrandAvatar size={34} markLight={MARK_L} markWhite={MARK_W} />
+      <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontSize: 14.5, lineHeight: 1.6, maxWidth: '66ch' }}>
+          {count ? <>Found <Num>{count}</Num> Purchase Order {count === 1 ? 'record' : 'records'}, worth <Num>₹{D.inr(sum)}</Num> in total. The filters that produced this are shown below.</>
+                 : <>No Purchase Order records matched those filters. You can relax a filter or start a new search.</>}
+        </div>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-card), var(--inset-hi)', overflow: 'hidden' }}>
+          <div style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+            <FilterBar>{result.filters.map((f, i) => <FilterPill key={i} {...f} />)}</FilterBar>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: count ? '1px solid var(--border-subtle)' : 'none', background: 'var(--meta-bg)' }}>
+            <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}><b style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{count}</b> {count === 1 ? 'record' : 'records'} found</span>
+            {count > 0 && <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Total&nbsp;&nbsp;<b style={{ color: 'var(--cyan)', fontFamily: 'var(--font-mono)' }}>₹{D.inr(sum)}</b></span>}
+          </div>
+          {count > 0 ? <DataTable fields={result.fields} rows={result.rows} />
+                     : <div style={{ padding: '30px 18px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 14 }}>No matching records. Try widening the filters or start a new search.</div>}
+        </div>
+        <div style={tsStyle}>DUX · {nowTime()}</div>
+      </div>
+    </div>
+  );
+}
+function Thinking() {
+  return (
+    <div className="turn" style={{ display: 'flex', gap: 13, alignItems: 'flex-start' }}>
+      <div style={{ flex: '1 1 auto', position: 'relative', overflow: 'hidden', padding: '15px 17px', borderRadius: 'var(--r-md)', background: 'var(--surface-2)', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-card)' }}>
+        <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'var(--brand-grad)', opacity: .85 }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
+          <img className="mascot-bob" src={MASCOT} alt="" style={{ width: 42, height: 42, objectFit: 'contain', animation: 'duxBob 2.4s var(--ease) infinite', filter: 'drop-shadow(0 3px 8px rgba(0,0,0,.22))' }} />
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 500 }}><span className="shim">Reading your operations data…</span></div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 5 }}>Parsing intent · matching filters · querying records</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+const EXAMPLES = [
+  { q: 'Show my pending purchase orders', icon: 'clock' },
+  { q: 'Purchase orders from Bhandari under 50000', icon: 'truck' },
+  { q: 'Show purchase orders above 50000', icon: 'rupee' },
+];
+function EmptyState({ onPick }) {
+  return (
+    <div style={{ flex: '1 1 auto', display: 'grid', placeItems: 'center', padding: 40 }}>
+      <div style={{ maxWidth: 560, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div style={{ position: 'relative', marginBottom: 18, display: 'grid', placeItems: 'center', width: 128, height: 128 }}>
+          <span style={{ position: 'absolute', width: 200, height: 200, borderRadius: '50%', background: 'radial-gradient(circle, var(--iris-tint), rgba(45,212,191,.05) 45%, transparent 68%)' }} />
+          <img className="mascot-float" src={MASCOT} alt="DUX" style={{ width: 118, height: 118, objectFit: 'contain', filter: 'drop-shadow(0 12px 28px rgba(20,28,46,.22))', animation: 'duxFloaty 5s var(--ease) infinite' }} />
+        </div>
+        <h1 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-.025em', margin: '0 0 10px' }}>Ask DUX about your <em style={{ fontStyle: 'normal', background: 'var(--brand-grad)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>operations</em></h1>
+        <p style={{ fontSize: 14.5, lineHeight: 1.6, color: 'var(--text-secondary)', margin: '0 0 24px', maxWidth: 440 }}>Type a plain-English question and DUX pulls the exact records from your ERP — with the filters that produced them shown for full transparency.</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9, width: '100%', maxWidth: 420 }}>
+          <div style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 2 }}>Try asking</div>
+          {EXAMPLES.map((e, i) => (
+            <button key={i} className="ex" onClick={() => onPick(e.q)} style={{ display: 'flex', alignItems: 'center', gap: 11, textAlign: 'left', padding: '12px 14px', borderRadius: 11, cursor: 'pointer', background: 'var(--surface-2)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: 13.5, fontFamily: 'var(--font-ui)', boxShadow: 'var(--inset-hi)', transition: 'all .25s var(--spring)' }}>
+              <Icon name={e.icon} size={15} color="var(--text-muted)" />
+              <span style={{ flex: '1 1 auto' }}>{e.q}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+function App() {
+  const [theme, setTheme] = React.useState('light');
+  const [turns, setTurns] = React.useState([]);
+  const [value, setValue] = React.useState('');
+  const streamRef = React.useRef(null);
+  React.useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
+  React.useEffect(() => { const el = streamRef.current; if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; }); }, [turns]);
+  function ask(text) {
+    const q = (text != null ? text : value).trim(); if (!q) return;
+    setValue('');
+    setTurns(t => [...t, { kind: 'user', text: q }, { kind: 'think' }]);
+    setTimeout(() => { const result = D.query(q); setTurns(t => [...t.filter(x => x.kind !== 'think'), { kind: 'ai', result }]); }, 1300);
+  }
+  function reset() { setTurns([]); setValue(''); }
+  return (
+    <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-app)', color: 'var(--text-primary)', fontFamily: 'var(--font-ui)' }}>
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'var(--ambient)' }} />
+      <header style={{ position: 'relative', zIndex: 5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 22px', flex: '0 0 auto', background: 'var(--hdr-bg)', backdropFilter: 'blur(16px) saturate(130%)', WebkitBackdropFilter: 'blur(16px) saturate(130%)', borderBottom: '1px solid var(--border-subtle)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <IconButton icon="chevron" title="Back to Desk" />
+          <BrandAvatar size={32} markLight={MARK_L} markWhite={MARK_W} />
+          <span style={{ width: 1, height: 24, background: 'var(--border-strong)' }} />
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+            <b style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-.02em' }}>DUX</b>
+            <small style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 450 }}>Assistant</small>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <IconButton icon={theme === 'dark' ? 'sun' : 'moon'} title="Toggle theme" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} />
+          <button className="btn-new" onClick={reset} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 500, color: 'var(--text-primary)', padding: '8px 14px', borderRadius: 999, cursor: 'pointer', background: 'var(--surface-1)', border: '1px solid var(--border-strong)', transition: 'all .25s var(--spring)' }}>
+            <Icon name="plus" size={14} /> New search
+          </button>
+        </div>
+      </header>
+      <div ref={streamRef} style={{ position: 'relative', zIndex: 2, flex: '1 1 auto', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+        {turns.length === 0
+          ? <EmptyState onPick={ask} />
+          : <div style={{ maxWidth: 1160, width: '100%', margin: '0 auto', padding: '30px 28px 26px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+              {turns.map((t, i) => t.kind === 'user' ? <UserTurn key={i} text={t.text} /> : t.kind === 'think' ? <Thinking key={i} /> : <AssistantTurn key={i} result={t.result} />)}
+            </div>}
+      </div>
+      <div style={{ position: 'relative', zIndex: 5, flex: '0 0 auto', padding: '0 24px 22px' }}>
+        <div style={{ maxWidth: 1160, margin: '0 auto' }}>
+          <Composer value={value} onChange={e => setValue(e.target.value)} onSubmit={() => ask()} />
+        </div>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

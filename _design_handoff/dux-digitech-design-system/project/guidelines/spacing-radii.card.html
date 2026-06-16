@@ -1,0 +1,18 @@
+<!-- @dsCard group="Spacing" viewport="700x150" name="Corner radii" subtitle="8 / 12 / 16 / 22px + pill" -->
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head><meta charset="UTF-8" /><link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; font-family: var(--font-ui); background: var(--bg-app); color: var(--text-primary); padding: 22px; display: flex; gap: 18px; align-items: flex-end; }
+  .sw { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .box { width: 76px; height: 60px; background: var(--surface-1); border: 1px solid var(--border-strong); box-shadow: var(--shadow-card); }
+  .nm { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+</style></head>
+<body>
+  <div class="sw"><div class="box" style="border-radius:var(--r-sm)"></div><span class="nm">sm 8</span></div>
+  <div class="sw"><div class="box" style="border-radius:var(--r-md)"></div><span class="nm">md 12</span></div>
+  <div class="sw"><div class="box" style="border-radius:var(--r-lg)"></div><span class="nm">lg 16</span></div>
+  <div class="sw"><div class="box" style="border-radius:var(--r-xl)"></div><span class="nm">xl 22</span></div>
+  <div class="sw"><div class="box" style="width:110px;border-radius:var(--r-pill)"></div><span class="nm">pill</span></div>
+</body>
+</html>

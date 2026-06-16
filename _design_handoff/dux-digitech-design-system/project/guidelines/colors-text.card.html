@@ -1,0 +1,17 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Text ramp" subtitle="Four-step foreground ramp, light theme" -->
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head><meta charset="UTF-8" /><link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; font-family: var(--font-ui); background: var(--bg-app); padding: 22px; display: flex; gap: 30px; align-items: flex-end; }
+  .col { display: flex; flex-direction: column; gap: 4px; }
+  .big { font-size: 30px; font-weight: var(--fw-semibold); letter-spacing: var(--ls-tight); }
+  .nm { font-size: 11px; font-family: var(--font-mono); color: var(--text-muted); }
+</style></head>
+<body>
+  <div class="col"><span class="big" style="color:var(--fg-1)">Primary</span><span class="nm">--fg-1 · #1A2030</span></div>
+  <div class="col"><span class="big" style="color:var(--fg-2)">Secondary</span><span class="nm">--fg-2 · #586273</span></div>
+  <div class="col"><span class="big" style="color:var(--fg-3)">Muted</span><span class="nm">--fg-3 · #8A93A3</span></div>
+  <div class="col"><span class="big" style="color:var(--fg-4)">Faint</span><span class="nm">--fg-4 · #AAB2BF</span></div>
+</body>
+</html>

@@ -1,0 +1,16 @@
+<!-- @dsCard group="Brand" viewport="700x150" name="Brand gradient & ambient" subtitle="The iris→cyan accent and the ambient page wash" -->
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head><meta charset="UTF-8" /><link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; font-family: var(--font-ui); background: var(--bg-app); color: var(--text-primary); padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+  .grad { height: 40px; border-radius: var(--r-md); background: var(--brand-grad); }
+  .ambient { height: 60px; border-radius: var(--r-md); border: 1px solid var(--border-subtle); background: var(--surface-1); position: relative; overflow: hidden; }
+  .ambient::after { content:""; position:absolute; inset:0; background: var(--ambient); }
+  .nm { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+</style></head>
+<body>
+  <div><div class="grad"></div><span class="nm">--brand-grad · iris → #4F9FD8 → cyan</span></div>
+  <div><div class="ambient"></div><span class="nm">--ambient · radial brand wash behind surfaces</span></div>
+</body>
+</html>
