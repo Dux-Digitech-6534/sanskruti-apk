@@ -241,6 +241,12 @@ class _DetailContent extends StatelessWidget {
                 value: detail.category,
               ),
               _InfoLine(
+                label: context.l10n.t('sub_category'),
+                value: detail.subCategory.trim().isEmpty
+                    ? '-'
+                    : detail.subCategory,
+              ),
+              _InfoLine(
                 label: context.l10n.t('priority'),
                 value: detail.priority,
               ),

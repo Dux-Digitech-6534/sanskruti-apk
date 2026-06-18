@@ -405,6 +405,7 @@ class PurchaseReceiptRepository {
                 'purchase_order_item': item.purchaseOrderItem,
               'rate': item.rate,
               'amount': item.amount,
+              if (item.rate == 0) 'allow_zero_valuation_rate': 1,
               if (item.remark.trim().isNotEmpty)
                 'custom_remark': item.remark.trim(),
             },
@@ -464,7 +465,14 @@ class PurchaseReceiptRepository {
     final response = await _apiClient.get(
       '${ApiEndpoints.resource}/File',
       queryParameters: {
-        'fields': jsonEncode(['name', 'file_name', 'file_url']),
+        'fields': jsonEncode([
+          'name',
+          'file_name',
+          'file_url',
+          'file_size',
+          'attached_to_doctype',
+          'attached_to_name',
+        ]),
         'filters': jsonEncode([
           ['attached_to_doctype', '=', 'Purchase Receipt'],
           ['attached_to_name', '=', name],
@@ -483,13 +491,14 @@ class PurchaseReceiptRepository {
         )
         .where((item) => item.fileName.isNotEmpty || item.fileUrl.isNotEmpty)
         .toList();
-    return _dedupeAttachments(attachments);
+    return dedupeReceiptAttachments(attachments);
   }
 
   Future<UploadedAttachment> uploadAttachment({
     required String filePath,
     required String fileName,
     String? docName,
+    String? fieldName,
   }) async {
     if (docName == null || docName.isEmpty) {
       throw Exception('Purchase Receipt docname is required for attachment.');
@@ -499,6 +508,7 @@ class PurchaseReceiptRepository {
       'file': await MultipartFile.fromFile(filePath, filename: fileName),
       'doctype': 'Purchase Receipt',
       'docname': docName,
+      if (fieldName != null && fieldName.isNotEmpty) 'fieldname': fieldName,
       'is_private': '1',
     });
 
@@ -692,7 +702,10 @@ class PurchaseOrderItemSelection {
     return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 
-  static double _rateFromJson(Map<String, dynamic> json, {required double qty}) {
+  static double _rateFromJson(
+    Map<String, dynamic> json, {
+    required double qty,
+  }) {
     final directRate = _firstPositive([
       json['rate'],
       json['base_rate'],
@@ -975,7 +988,7 @@ class PurchaseReceiptDetail {
                 .where((item) => item.itemCode.isNotEmpty)
                 .toList()
           : const [],
-      attachments: attachments,
+      attachments: dedupeReceiptAttachments(attachments),
     );
   }
 }
@@ -1029,37 +1042,110 @@ class ReceiptAttachment {
     required this.fileName,
     required this.fileUrl,
     this.id = '',
+    this.fileSize = 0,
+    this.attachedToDoctype = '',
+    this.attachedToName = '',
   });
 
   final String fileName;
   final String fileUrl;
   final String id;
+  final int fileSize;
+  final String attachedToDoctype;
+  final String attachedToName;
 
   factory ReceiptAttachment.fromJson(Map<String, dynamic> json) {
     return ReceiptAttachment(
       id: json['name']?.toString() ?? '',
       fileName: json['file_name']?.toString() ?? '',
       fileUrl: json['file_url']?.toString() ?? '',
+      fileSize: _toInt(json['file_size']),
+      attachedToDoctype: json['attached_to_doctype']?.toString() ?? '',
+      attachedToName: json['attached_to_name']?.toString() ?? '',
     );
   }
 }
 
-List<ReceiptAttachment> _dedupeAttachments(List<ReceiptAttachment> items) {
+List<ReceiptAttachment> dedupeReceiptAttachments(
+  List<ReceiptAttachment> items,
+) {
   final seen = <String>{};
   final unique = <ReceiptAttachment>[];
   for (final item in items) {
-    final key = _attachmentKey(item);
-    if (key.isEmpty || seen.add(key)) unique.add(item);
+    final keys = _attachmentKeys(item);
+    if (keys.isEmpty) {
+      unique.add(item);
+      continue;
+    }
+    if (keys.any(seen.contains)) continue;
+    seen.addAll(keys);
+    unique.add(item);
   }
   return unique;
 }
 
-String _attachmentKey(ReceiptAttachment item) {
-  final url = item.fileUrl.trim().toLowerCase();
-  if (url.isNotEmpty) return url;
-  final id = item.id.trim().toLowerCase();
-  if (id.isNotEmpty) return id;
-  return item.fileName.trim().toLowerCase();
+List<String> _attachmentKeys(ReceiptAttachment item) {
+  final url = _normalizeAttachmentUrl(item.fileUrl);
+  final id = _normalizeAttachmentText(item.id);
+  final fileName = _normalizeAttachmentText(item.fileName);
+  final fileSize = item.fileSize > 0 ? item.fileSize.toString() : '';
+  final attachedToDoctype = _normalizeAttachmentText(item.attachedToDoctype);
+  final attachedToName = _normalizeAttachmentText(item.attachedToName);
+  final documentFileKey =
+      attachedToDoctype.isNotEmpty &&
+          attachedToName.isNotEmpty &&
+          fileName.isNotEmpty
+      ? '$attachedToDoctype|$attachedToName|$fileName'
+      : '';
+  return [
+    if (url.isNotEmpty) 'url:$url',
+    if (url.isNotEmpty && fileName.isNotEmpty) 'file-url:$fileName|$url',
+    if (fileName.isNotEmpty && fileSize.isNotEmpty)
+      'file-size:$fileName|$fileSize',
+    if (id.isNotEmpty) 'id:$id',
+    if (url.isEmpty && id.isEmpty && documentFileKey.isNotEmpty)
+      'document-file:$documentFileKey',
+    if (url.isEmpty &&
+        id.isEmpty &&
+        documentFileKey.isEmpty &&
+        fileName.isNotEmpty)
+      'name:$fileName',
+  ];
+}
+
+String _normalizeAttachmentUrl(String value) {
+  var text = value.trim();
+  if (text.isEmpty) return '';
+  final queryIndex = text.indexOf('?');
+  final fragmentIndex = text.indexOf('#');
+  final cutIndexes = [
+    if (queryIndex >= 0) queryIndex,
+    if (fragmentIndex >= 0) fragmentIndex,
+  ];
+  if (cutIndexes.isNotEmpty) {
+    cutIndexes.sort();
+    text = text.substring(0, cutIndexes.first);
+  }
+  text = text.replaceAll('\\', '/');
+  try {
+    final uri = Uri.parse(text);
+    final path = uri.hasScheme ? uri.path : text;
+    return Uri.decodeComponent(path)
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'/+'), '/')
+        .replaceFirst(RegExp(r'^/+'), '');
+  } on FormatException {
+    return text
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'/+'), '/')
+        .replaceFirst(RegExp(r'^/+'), '');
+  }
+}
+
+String _normalizeAttachmentText(String value) {
+  return value.trim().toLowerCase();
 }
 
 int _toInt(Object? value) {

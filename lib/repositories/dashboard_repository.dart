@@ -28,14 +28,11 @@ class DashboardRepository {
     final materialRequests = await _fetchPagedSummaries(
       doctype: 'Material Request',
     );
+    final purchaseOrders = await _fetchPagedSummaries(
+      doctype: 'Purchase Order',
+    );
     final pendingMaterialRequests = await _fetchPagedSummaries(
       doctype: 'Material Request',
-      filters: const [
-        ['status', '!=', 'Completed'],
-      ],
-    );
-    final pendingPurchaseOrders = await _fetchPagedSummaries(
-      doctype: 'Purchase Order',
       filters: const [
         ['status', '!=', 'Completed'],
       ],
@@ -45,15 +42,14 @@ class DashboardRepository {
 
     return DashboardData(
       totalMaterialRequestsCount: materialRequests.length,
+      totalPurchaseOrdersCount: purchaseOrders.length,
       pendingRequestsCount: pendingMaterialRequests
           .where(
             (request) =>
                 MaterialRequestStatus.isPendingLike(request.displayStatus),
           )
           .length,
-      pendingPurchaseOrdersCount: pendingPurchaseOrders
-          .where(_isNotCompleted)
-          .length,
+      pendingPurchaseOrdersCount: purchaseOrders.where(_isNotCompleted).length,
       recentRequests: recentRequests,
       recentReceipts: recentReceipts,
       siteName: recentRequests.isEmpty ? null : recentRequests.first.site,
@@ -157,7 +153,7 @@ class DashboardRepository {
 
   List<String> _fieldsFor(String doctype) {
     if (doctype == 'Purchase Order') {
-      return const ['name', 'status', 'transaction_date'];
+      return const ['name', 'status', 'docstatus', 'transaction_date'];
     }
 
     return const [

@@ -783,6 +783,7 @@ class MaterialRequestDetail {
     required this.project,
     required this.warehouse,
     required this.category,
+    required this.subCategory,
     required this.priority,
     required this.workflowState,
     required this.customWorkflowStatus,
@@ -801,6 +802,7 @@ class MaterialRequestDetail {
   final String project;
   final String warehouse;
   final String category;
+  final String subCategory;
   final String priority;
   final String workflowState;
   final String customWorkflowStatus;
@@ -840,6 +842,13 @@ class MaterialRequestDetail {
           json['custom_category']?.toString() ??
           json['material_category']?.toString() ??
           '-',
+      subCategory:
+          json['custom_sub_category']?.toString() ??
+          json['sub_category']?.toString() ??
+          json['custom_subcategory']?.toString() ??
+          json['item_sub_category']?.toString() ??
+          json['material_sub_category']?.toString() ??
+          '',
       priority: json['custom_priority']?.toString() ?? 'Medium',
       workflowState: json['workflow_state']?.toString() ?? '',
       customWorkflowStatus: json['custom_workflow_status']?.toString() ?? '',

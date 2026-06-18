@@ -183,18 +183,28 @@ class ReceiptDraftItem {
     return allowed > 0 ? allowed : 0;
   }
 
-  ReceiptDraftItem copyWith({double? receiveQty, String? remark}) {
+  ReceiptDraftItem copyWith({
+    double? receiveQty,
+    double? rate,
+    String? uom,
+    String? warehouse,
+    String? purchaseOrderItem,
+    double? orderedQty,
+    double? receivedQty,
+    double? pendingQty,
+    String? remark,
+  }) {
     return ReceiptDraftItem(
       itemCode: itemCode,
       itemName: itemName,
-      uom: uom,
-      orderedQty: orderedQty,
-      receivedQty: receivedQty,
-      pendingQty: pendingQty,
+      uom: uom ?? this.uom,
+      orderedQty: orderedQty ?? this.orderedQty,
+      receivedQty: receivedQty ?? this.receivedQty,
+      pendingQty: pendingQty ?? this.pendingQty,
       receiveQty: receiveQty ?? this.receiveQty,
-      warehouse: warehouse,
-      purchaseOrderItem: purchaseOrderItem,
-      rate: rate,
+      warehouse: warehouse ?? this.warehouse,
+      purchaseOrderItem: purchaseOrderItem ?? this.purchaseOrderItem,
+      rate: rate ?? this.rate,
       tolerancePercentage: tolerancePercentage,
       remark: remark ?? this.remark,
     );
@@ -389,8 +399,8 @@ class CreatePurchaseReceiptController
     }
 
     final po = state.selectedPurchaseOrder!;
-    await _validateCurrentPendingQuantities(po.name);
-    final items = state.receiptItems
+    final latestItems = await _refreshItemsFromLatestPurchaseOrder(po.name);
+    final items = latestItems
         .where((item) => item.receiveQty > 0)
         .map(
           (item) => PurchaseReceiptSubmitItem(
@@ -433,16 +443,17 @@ class CreatePurchaseReceiptController
     if (material != null) {
       state = state.copyWith(isUploadingMaterial: true);
       try {
-        final uploaded = await _repository.uploadAttachment(
+        await _repository.uploadAttachment(
           filePath: material.filePath,
           fileName: material.fileName,
           docName: docName,
+          fieldName: 'custom_add_material',
         );
         await _repository.updateAttachmentFields(
           name: docName,
-          materialReceiptUrl: uploaded.fileUrl,
           materialReceiptCapturedAt: material.capturedAt,
         );
+        state = state.copyWith(clearMaterialAttachment: true);
       } finally {
         state = state.copyWith(isUploadingMaterial: false);
       }
@@ -450,16 +461,17 @@ class CreatePurchaseReceiptController
     if (invoice != null) {
       state = state.copyWith(isUploadingInvoice: true);
       try {
-        final uploaded = await _repository.uploadAttachment(
+        await _repository.uploadAttachment(
           filePath: invoice.filePath,
           fileName: invoice.fileName,
           docName: docName,
+          fieldName: 'custom_add_invoice',
         );
         await _repository.updateAttachmentFields(
           name: docName,
-          invoiceReceiptUrl: uploaded.fileUrl,
           invoiceReceiptCapturedAt: invoice.capturedAt,
         );
+        state = state.copyWith(clearInvoiceAttachment: true);
       } finally {
         state = state.copyWith(isUploadingInvoice: false);
       }
@@ -493,7 +505,9 @@ class CreatePurchaseReceiptController
     return null;
   }
 
-  Future<void> _validateCurrentPendingQuantities(String purchaseOrder) async {
+  Future<List<ReceiptDraftItem>> _refreshItemsFromLatestPurchaseOrder(
+    String purchaseOrder,
+  ) async {
     final detail = await _repository.fetchPurchaseOrderDetail(purchaseOrder);
     final pendingByRow = <String, PurchaseOrderReceiptItem>{};
     final pendingByCode = <String, PurchaseOrderReceiptItem>{};
@@ -509,12 +523,15 @@ class CreatePurchaseReceiptController
       throw message;
     }
 
+    final refreshedItems = <ReceiptDraftItem>[];
     for (final item in state.receiptItems.where(
       (item) => item.receiveQty > 0,
     )) {
-      final current = item.purchaseOrderItem.isNotEmpty
-          ? pendingByRow[item.purchaseOrderItem]
-          : pendingByCode[item.itemCode];
+      final current =
+          (item.purchaseOrderItem.isNotEmpty
+              ? pendingByRow[item.purchaseOrderItem]
+              : null) ??
+          pendingByCode[item.itemCode];
       if (current == null || current.pendingQty <= 0) {
         final message = '${item.itemCode} is fully received.';
         state = state.copyWith(errorMessage: message);
@@ -528,7 +545,24 @@ class CreatePurchaseReceiptController
         state = state.copyWith(errorMessage: message);
         throw message;
       }
+      refreshedItems.add(
+        item.copyWith(
+          uom: current.uom.isNotEmpty ? current.uom : item.uom,
+          orderedQty: current.qty,
+          receivedQty: current.receivedQty,
+          pendingQty: current.pendingQty,
+          warehouse: current.warehouse.isNotEmpty
+              ? current.warehouse
+              : item.warehouse,
+          purchaseOrderItem: current.rowName.isNotEmpty
+              ? current.rowName
+              : item.purchaseOrderItem,
+          rate: current.rate,
+        ),
+      );
     }
+    state = state.copyWith(receiptItems: refreshedItems, clearError: true);
+    return refreshedItems;
   }
 
   String _toleranceMessage(ReceiptDraftItem item, {double? currentMax}) {

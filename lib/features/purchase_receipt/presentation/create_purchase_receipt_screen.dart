@@ -867,6 +867,7 @@ class _ReceiptItemCard extends StatelessWidget {
                 child: _QtyPill(
                   label: context.l10n.t('ordered'),
                   value: item.orderedQty,
+                  suffix: item.uom,
                 ),
               ),
               const SizedBox(width: 8),
@@ -874,6 +875,7 @@ class _ReceiptItemCard extends StatelessWidget {
                 child: _QtyPill(
                   label: context.l10n.t('received'),
                   value: item.receivedQty,
+                  suffix: item.uom,
                 ),
               ),
               const SizedBox(width: 8),
@@ -881,6 +883,7 @@ class _ReceiptItemCard extends StatelessWidget {
                 child: _QtyPill(
                   label: context.l10n.t('pending'),
                   value: item.pendingQty,
+                  suffix: item.uom,
                 ),
               ),
             ],
@@ -936,10 +939,11 @@ class _ReceiptItemCard extends StatelessWidget {
 }
 
 class _QtyPill extends StatelessWidget {
-  const _QtyPill({required this.label, required this.value});
+  const _QtyPill({required this.label, required this.value, this.suffix = ''});
 
   final String label;
   final double value;
+  final String suffix;
 
   @override
   Widget build(BuildContext context) {
@@ -958,7 +962,9 @@ class _QtyPill extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            _formatQty(value),
+            suffix.trim().isEmpty
+                ? _formatQty(value)
+                : '${_formatQty(value)} $suffix',
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
         ],

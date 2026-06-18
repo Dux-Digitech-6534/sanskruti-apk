@@ -110,11 +110,11 @@ class _DashboardContent extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: DashboardCard(
-                  title: context.l10n.t('pending_po_approval'),
-                  value: data.pendingPurchaseOrdersCount.toString(),
+                  title: context.l10n.t('total_purchase_order'),
+                  value: data.totalPurchaseOrdersCount.toString(),
                   icon: Icons.description_outlined,
                   tint: AppColors.warning,
-                  onTap: () => context.push('/purchase-order?status=pending'),
+                  onTap: () => context.push('/purchase-order'),
                 ),
               ),
             ],

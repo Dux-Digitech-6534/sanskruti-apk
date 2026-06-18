@@ -84,48 +84,51 @@ class _PurchaseReceiptDetailScreenState
           onRetry: () =>
               ref.invalidate(purchaseReceiptDetailProvider(widget.id)),
         ),
-        data: (receipt) => RefreshIndicator(
-          onRefresh: () async {
-            ref.invalidate(purchaseReceiptDetailProvider(widget.id));
-            await ref.read(purchaseReceiptDetailProvider(widget.id).future);
-          },
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _HeaderCard(receipt: receipt),
-              const SizedBox(height: 16),
-              Text(
-                context.l10n.t('items'),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
+        data: (receipt) {
+          final attachments = dedupeReceiptAttachments(receipt.attachments);
+          return RefreshIndicator(
+            onRefresh: () async {
+              ref.invalidate(purchaseReceiptDetailProvider(widget.id));
+              await ref.read(purchaseReceiptDetailProvider(widget.id).future);
+            },
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _HeaderCard(receipt: receipt),
+                const SizedBox(height: 16),
+                Text(
+                  context.l10n.t('items'),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              if (receipt.items.isEmpty)
-                _InfoCard(child: Text(context.l10n.t('no_items_found')))
-              else
-                ...receipt.items.map(_ItemCard.new),
-              if (receipt.items.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                _TotalAmountCard(receipt: receipt),
+                const SizedBox(height: 10),
+                if (receipt.items.isEmpty)
+                  _InfoCard(child: Text(context.l10n.t('no_items_found')))
+                else
+                  ...receipt.items.map(_ItemCard.new),
+                if (receipt.items.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _TotalAmountCard(receipt: receipt),
+                ],
+                const SizedBox(height: 16),
+                Text(
+                  context.l10n.t('attachments'),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (attachments.isEmpty)
+                  _InfoCard(child: Text(context.l10n.t('no_attachments_found')))
+                else
+                  ...attachments.map(_AttachmentCard.new),
               ],
-              const SizedBox(height: 16),
-              Text(
-                context.l10n.t('attachments'),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 10),
-              if (receipt.attachments.isEmpty)
-                _InfoCard(child: Text(context.l10n.t('no_attachments_found')))
-              else
-                ...receipt.attachments.map(_AttachmentCard.new),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }

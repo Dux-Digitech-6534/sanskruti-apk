@@ -38,7 +38,11 @@ class _PurchaseOrderListScreenState
     Future.microtask(() async {
       final controller = ref.read(purchaseOrderControllerProvider.notifier);
       _searchController.clear();
-      controller.setStatusFilter(PurchaseOrderStatusFilter.draftPending);
+      controller.setStatusFilter(
+        widget.initialPendingOnly
+            ? PurchaseOrderStatusFilter.approvalPending
+            : PurchaseOrderStatusFilter.all,
+      );
       await controller.clearSearchAndRefresh();
     });
   }
@@ -80,7 +84,7 @@ class _PurchaseOrderListScreenState
                   Expanded(
                     child: DashboardCard(
                       title: context.l10n.t('loaded_po'),
-                      value: visibleItems.length.toString(),
+                      value: state.items.length.toString(),
                       icon: Icons.description_outlined,
                     ),
                   ),
@@ -122,17 +126,9 @@ class _PurchaseOrderListScreenState
                 ],
               ),
               const SizedBox(height: 14),
-              _DraftPendingFilter(count: visibleItems.length),
-              const SizedBox(height: 8),
-              const Padding(
-                padding: EdgeInsets.only(left: 4),
-                child: Text(
-                  'Showing Draft and Pending purchase orders',
-                  style: TextStyle(
-                    color: AppColors.mutedText,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+              _StatusTabs(
+                selected: state.statusFilter,
+                onChanged: controller.setStatusFilter,
               ),
               const SizedBox(height: 16),
               if (state.isLoading)
@@ -154,6 +150,7 @@ class _PurchaseOrderListScreenState
                 ...visibleItems.map(
                   (order) => _PurchaseOrderCard(
                     order,
+                    statusFilter: state.statusFilter,
                     onTap: () async {
                       await context.push(
                         '/purchase-order-detail/${Uri.encodeComponent(order.name)}',
@@ -174,80 +171,65 @@ class _PurchaseOrderListScreenState
   }
 }
 
-class _DraftPendingFilter extends StatelessWidget {
-  const _DraftPendingFilter({required this.count});
+class _StatusTabs extends StatelessWidget {
+  const _StatusTabs({required this.selected, required this.onChanged});
 
-  final int count;
+  final PurchaseOrderStatusFilter selected;
+  final ValueChanged<PurchaseOrderStatusFilter> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppColors.primary, AppColors.primaryDark],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: .20),
-            offset: const Offset(0, 12),
-            blurRadius: 26,
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.accent),
+    return SizedBox(
+      height: 38,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemBuilder: (context, index) {
+          final filter = PurchaseOrderStatusFilter.values[index];
+          final isSelected = filter == selected;
+          return ChoiceChip(
+            label: Text(context.l10n.t(_filterLabelKey(filter))),
+            selected: isSelected,
+            showCheckmark: false,
+            selectedColor: AppColors.primary,
+            labelStyle: TextStyle(
+              color: isSelected ? Colors.white : AppColors.primary,
+              fontWeight: FontWeight.w700,
             ),
-            child: const Icon(Icons.filter_alt_outlined, color: Colors.white),
-          ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Text(
-              'Draft / Pending',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
-              ),
+            side: BorderSide(
+              color: isSelected ? AppColors.primary : AppColors.border,
             ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.accent,
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              count.toString(),
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
+            onSelected: (_) => onChanged(filter),
+          );
+        },
+        separatorBuilder: (context, index) => const SizedBox(width: 8),
+        itemCount: PurchaseOrderStatusFilter.values.length,
       ),
     );
+  }
+
+  String _filterLabelKey(PurchaseOrderStatusFilter filter) {
+    return switch (filter) {
+      PurchaseOrderStatusFilter.all => 'all',
+      PurchaseOrderStatusFilter.approvalPending => 'approval_pending',
+      PurchaseOrderStatusFilter.approved => 'approved',
+    };
   }
 }
 
 class _PurchaseOrderCard extends StatelessWidget {
-  const _PurchaseOrderCard(this.order, {required this.onTap});
+  const _PurchaseOrderCard(
+    this.order, {
+    required this.statusFilter,
+    required this.onTap,
+  });
 
   final PurchaseOrderSummary order;
+  final PurchaseOrderStatusFilter statusFilter;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final displayStatus = _poDisplayStatus(order);
+    final displayStatus = _poDisplayStatus(order, statusFilter);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -344,10 +326,28 @@ class _MetaText extends StatelessWidget {
   }
 }
 
-String _poDisplayStatus(PurchaseOrderSummary order) {
+String _poDisplayStatus(
+  PurchaseOrderSummary order,
+  PurchaseOrderStatusFilter statusFilter,
+) {
   final status = order.status.trim().toLowerCase();
   if (order.docstatus == 0 || status.contains('draft')) return 'Draft';
-  return 'Pending';
+  if (status == 'pending') return 'Pending';
+  if (order.docstatus == 2 || status.contains('cancel')) return 'Cancelled';
+  if (statusFilter == PurchaseOrderStatusFilter.approved ||
+      _isApprovedPurchaseOrderDisplayStatus(status)) {
+    return 'Approved';
+  }
+  final trimmed = order.status.trim();
+  if (trimmed.isNotEmpty) return trimmed;
+  return order.docstatus == 1 ? 'Approved' : 'Pending';
+}
+
+bool _isApprovedPurchaseOrderDisplayStatus(String status) {
+  return status == 'to bill' ||
+      status == 'to receive and bill' ||
+      status == 'to receive' ||
+      status == 'completed';
 }
 
 class _MessageState extends StatelessWidget {

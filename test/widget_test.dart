@@ -1,7 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sanskruti_group/core/constants/app_constants.dart';
+import 'package:sanskruti_group/features/purchase_order/presentation/purchase_order_controller.dart';
+import 'package:sanskruti_group/models/dashboard_data.dart';
 import 'package:sanskruti_group/models/purchase_request.dart';
+import 'package:sanskruti_group/repositories/purchase_order_repository.dart';
 import 'package:sanskruti_group/repositories/purchase_receipt_repository.dart';
+import 'package:sanskruti_group/repositories/purchase_request_repository.dart';
 
 void main() {
   test('app constants expose the production brand', () {
@@ -70,6 +74,97 @@ void main() {
     });
   });
 
+  group('Material Request detail mapping', () {
+    test('reads saved sub category custom field', () {
+      final detail = MaterialRequestDetail.fromJson(const {
+        'name': 'MAT-MR-1',
+        'status': 'Pending',
+        'docstatus': 1,
+        'custom_category': 'Civil',
+        'custom_sub_category': 'Cement',
+      });
+
+      expect(detail.subCategory, 'Cement');
+    });
+  });
+
+  group('Dashboard data mapping', () {
+    test('reads total purchase order count', () {
+      final data = DashboardData.fromJson(const {
+        'total_material_requests_count': 8,
+        'total_purchase_orders_count': 12,
+        'pending_purchase_orders_count': 3,
+      });
+
+      expect(data.totalPurchaseOrdersCount, 12);
+    });
+  });
+
+  group('Purchase Order filters', () {
+    final orders = [
+      const PurchaseOrderSummary(
+        name: 'PO-DRAFT',
+        supplier: 'Supplier',
+        status: 'Draft',
+        docstatus: 0,
+        grandTotal: 0,
+      ),
+      const PurchaseOrderSummary(
+        name: 'PO-PENDING',
+        supplier: 'Supplier',
+        status: 'Pending',
+        docstatus: 1,
+        grandTotal: 0,
+      ),
+      const PurchaseOrderSummary(
+        name: 'PO-APPROVED',
+        supplier: 'Supplier',
+        status: 'To Receive and Bill',
+        docstatus: 1,
+        grandTotal: 0,
+      ),
+      const PurchaseOrderSummary(
+        name: 'PO-CANCELLED',
+        supplier: 'Supplier',
+        status: 'Cancelled',
+        docstatus: 2,
+        grandTotal: 0,
+      ),
+    ];
+
+    test('All shows every purchase order', () {
+      final state = PurchaseOrderState(items: orders);
+
+      expect(state.visibleItems.map((item) => item.name), [
+        'PO-DRAFT',
+        'PO-PENDING',
+        'PO-APPROVED',
+        'PO-CANCELLED',
+      ]);
+    });
+
+    test('Approval Pending shows Draft and Pending only', () {
+      final state = PurchaseOrderState(
+        items: orders,
+        statusFilter: PurchaseOrderStatusFilter.approvalPending,
+      );
+
+      expect(state.visibleItems.map((item) => item.name), [
+        'PO-DRAFT',
+        'PO-PENDING',
+      ]);
+    });
+
+    test('Approved excludes Draft, Pending, and Cancelled', () {
+      final state = PurchaseOrderState(
+        items: orders,
+        statusFilter: PurchaseOrderStatusFilter.approved,
+      );
+
+      expect(state.visibleItems.map((item) => item.name), ['PO-APPROVED']);
+    });
+  });
+
   group('Purchase Receipt PO item mapping', () {
     test('uses base_rate when rate is missing from PO item JSON', () {
       final item = PurchaseOrderReceiptItem.fromJson(const {
@@ -91,6 +186,62 @@ void main() {
       });
 
       expect(item.rate, 10);
+    });
+  });
+
+  group('Purchase Receipt attachment dedupe', () {
+    test('removes duplicate file urls with query parameters', () {
+      final attachments = dedupeReceiptAttachments(const [
+        ReceiptAttachment(
+          id: 'FILE-1',
+          fileName: 'receipt.jpg',
+          fileUrl: '/private/files/receipt.jpg?download=1',
+        ),
+        ReceiptAttachment(
+          id: 'FILE-2',
+          fileName: 'receipt.jpg',
+          fileUrl: 'https://sanskruti.example/private/files/receipt.jpg',
+        ),
+      ]);
+
+      expect(attachments, hasLength(1));
+      expect(attachments.single.id, 'FILE-1');
+    });
+
+    test('keeps same file name when urls point to different files', () {
+      final attachments = dedupeReceiptAttachments(const [
+        ReceiptAttachment(
+          id: 'FILE-1',
+          fileName: 'receipt.jpg',
+          fileUrl: '/private/files/receipt.jpg',
+        ),
+        ReceiptAttachment(
+          id: 'FILE-2',
+          fileName: 'receipt.jpg',
+          fileUrl: '/private/files/receipt-1.jpg',
+        ),
+      ]);
+
+      expect(attachments, hasLength(2));
+    });
+
+    test('removes duplicate uploads with same file name and size', () {
+      final attachments = dedupeReceiptAttachments(const [
+        ReceiptAttachment(
+          id: 'FILE-1',
+          fileName: 'receipt.jpg',
+          fileUrl: '/private/files/receipt.jpg',
+          fileSize: 1024,
+        ),
+        ReceiptAttachment(
+          id: 'FILE-2',
+          fileName: 'receipt.jpg',
+          fileUrl: '/private/files/receipt-1.jpg',
+          fileSize: 1024,
+        ),
+      ]);
+
+      expect(attachments, hasLength(1));
     });
   });
 }

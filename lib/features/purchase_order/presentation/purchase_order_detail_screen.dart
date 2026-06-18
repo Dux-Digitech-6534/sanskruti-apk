@@ -84,7 +84,7 @@ class _HeaderCard extends StatelessWidget {
                   ),
                 ),
               ),
-              StatusBadge(label: order.status),
+              StatusBadge(label: _poDetailDisplayStatus(order)),
             ],
           ),
           const SizedBox(height: 14),
@@ -113,6 +113,24 @@ class _HeaderCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String _poDetailDisplayStatus(PurchaseOrderDetail order) {
+  final status = order.status.trim().toLowerCase();
+  if (order.docstatus == 0 || status.contains('draft')) return 'Draft';
+  if (status == 'pending') return 'Pending';
+  if (order.docstatus == 2 || status.contains('cancel')) return 'Cancelled';
+  if (_isApprovedPurchaseOrderDisplayStatus(status)) return 'Approved';
+  final trimmed = order.status.trim();
+  if (trimmed.isNotEmpty) return trimmed;
+  return order.docstatus == 1 ? 'Approved' : 'Pending';
+}
+
+bool _isApprovedPurchaseOrderDisplayStatus(String status) {
+  return status == 'to bill' ||
+      status == 'to receive and bill' ||
+      status == 'to receive' ||
+      status == 'completed';
 }
 
 class _ItemCard extends StatelessWidget {

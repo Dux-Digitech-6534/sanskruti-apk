@@ -8,7 +8,9 @@ final purchaseOrderControllerProvider =
     );
 
 enum PurchaseOrderStatusFilter {
-  draftPending('Draft / Pending');
+  all('All'),
+  approvalPending('Approval Pending'),
+  approved('Approved');
 
   const PurchaseOrderStatusFilter(this.label);
 
@@ -19,7 +21,7 @@ class PurchaseOrderState {
   const PurchaseOrderState({
     this.items = const [],
     this.search = '',
-    this.statusFilter = PurchaseOrderStatusFilter.draftPending,
+    this.statusFilter = PurchaseOrderStatusFilter.all,
     this.fromDate,
     this.toDate,
     this.isLoading = false,
@@ -76,13 +78,25 @@ class PurchaseOrderState {
   }
 
   bool _matchesStatus(PurchaseOrderSummary order) {
-    final status = order.status.trim().toLowerCase();
+    final approvalPending = _isApprovalPending(order);
     return switch (statusFilter) {
-      PurchaseOrderStatusFilter.draftPending =>
-        status == 'draft' ||
-            status == 'pending' ||
-            (status.isEmpty && order.docstatus == 0),
+      PurchaseOrderStatusFilter.all => true,
+      PurchaseOrderStatusFilter.approvalPending => approvalPending,
+      PurchaseOrderStatusFilter.approved =>
+        !approvalPending && order.docstatus == 1 && !_isCancelled(order),
     };
+  }
+
+  bool _isApprovalPending(PurchaseOrderSummary order) {
+    final status = order.status.trim().toLowerCase();
+    return status == 'draft' ||
+        status == 'pending' ||
+        (status.isEmpty && order.docstatus == 0);
+  }
+
+  bool _isCancelled(PurchaseOrderSummary order) {
+    final status = order.status.trim().toLowerCase();
+    return order.docstatus == 2 || status.contains('cancel');
   }
 
   bool _matchesDate(PurchaseOrderSummary order) {
