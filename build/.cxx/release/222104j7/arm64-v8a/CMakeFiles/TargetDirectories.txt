@@ -1,0 +1,2 @@
+C:/Users/HP/Desktop/andriod apps/sanskruti-dux-ui-debug/build/.cxx/release/222104j7/arm64-v8a/CMakeFiles/edit_cache.dir
+C:/Users/HP/Desktop/andriod apps/sanskruti-dux-ui-debug/build/.cxx/release/222104j7/arm64-v8a/CMakeFiles/rebuild_cache.dir
